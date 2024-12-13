@@ -1,0 +1,2 @@
+[tool.pyright]
+venv = "./venv" # Specify your virtual environment path relative to the project root

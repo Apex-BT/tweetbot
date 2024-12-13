@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# config
+config.py
+*service_acc.json
+
 # C extensions
 *.so
 

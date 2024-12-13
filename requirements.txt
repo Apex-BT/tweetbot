@@ -1,0 +1,6 @@
+tweepy
+requests
+gspread
+oauth2client
+pytest
+pytest-mock
