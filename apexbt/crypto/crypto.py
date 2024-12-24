@@ -9,18 +9,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_crypto_price(ticker, timestamp=None):
+def get_crypto_price(ticker, timestamp=None, include_historical=False):
     """
     Get cryptocurrency price data including historical prices
-    timestamp: Optional timestamp to get historical price
-    Returns current price, price at tweet time, and historical data
+
+    Args:
+        ticker: Cryptocurrency ticker symbol
+        timestamp: Optional timestamp to get historical price
+        include_historical: Boolean flag to determine if historical prices should be fetched
+
+    Returns: Dictionary containing price data
     """
     try:
         current_price_data = get_current_price(ticker)
         if not current_price_data:
             return None
 
-        tweet_time_price = None
+        result = {
+            "current_price": current_price_data.get("price"),
+            "volume_24h": current_price_data.get("volume_24h"),
+            "liquidity": current_price_data.get("liquidity"),
+            "percent_change_24h": current_price_data.get("percent_change_24h"),
+            "dex": current_price_data.get("dex"),
+            "network": current_price_data.get("network"),
+            "pair_name": current_price_data.get("pair_name"),
+            "last_updated": current_price_data.get("last_updated"),
+            "contract_address": current_price_data.get("contract_address"),
+        }
+
+        # Get tweet time price if timestamp is provided
         if timestamp and current_price_data:
             tweet_time_price = get_historical_price(
                 ticker,
@@ -28,43 +45,42 @@ def get_crypto_price(ticker, timestamp=None):
                 contract_address=current_price_data.get("contract_address"),
                 network_id=current_price_data.get("network_id")
             )
+            if tweet_time_price is None:
+                logger.error(f"Could not get historical price for {ticker} at {timestamp}")
+                return None
+            result["tweet_time_price"] = tweet_time_price
 
-        current_price = current_price_data.get("price")
-        contract_address = current_price_data.get("contract_address")
-        network_id = current_price_data.get("network_id")
+        # Only get historical prices if include_historical flag is True
+        if include_historical:
+            now = datetime.utcnow()
+            contract_address = current_price_data.get("contract_address")
+            network_id = current_price_data.get("network_id")
+            current_price = current_price_data.get("price")
 
-        # Optional historical lookups
-        now = datetime.utcnow()
+            # Get historical prices at different lookback periods
+            price_7d = get_historical_price(ticker, now - timedelta(days=7),
+                                         contract_address=contract_address,
+                                         network_id=network_id)
+            price_14d = get_historical_price(ticker, now - timedelta(days=14),
+                                          contract_address=contract_address,
+                                          network_id=network_id)
+            price_30d = get_historical_price(ticker, now - timedelta(days=30),
+                                          contract_address=contract_address,
+                                          network_id=network_id)
 
-        # Get historical prices at different lookback periods
-        price_7d = get_historical_price(ticker, now - timedelta(days=7), contract_address=contract_address, network_id=network_id)
-        price_14d = get_historical_price(ticker, now - timedelta(days=14), contract_address=contract_address, network_id=network_id)
-        price_30d = get_historical_price(ticker, now - timedelta(days=30), contract_address=contract_address, network_id=network_id)
+            def calc_percent_change(historical_price, current_price):
+                if historical_price and historical_price != 0:
+                    return ((current_price - historical_price) / historical_price) * 100
+                return None
 
-        def calc_percent_change(historical_price, current_price):
-            if historical_price and historical_price != 0:
-                return ((current_price - historical_price) / historical_price) * 100
-            return None
+            result.update({
+                "percent_change_7d": calc_percent_change(price_7d, current_price),
+                "percent_change_14d": calc_percent_change(price_14d, current_price),
+                "percent_change_30d": calc_percent_change(price_30d, current_price)
+            })
 
-        percent_change_7d = calc_percent_change(price_7d, current_price)
-        percent_change_14d = calc_percent_change(price_14d, current_price)
-        percent_change_30d = calc_percent_change(price_30d, current_price)
+        return result
 
-        return {
-            "current_price": current_price_data.get("price"),
-            "tweet_time_price": tweet_time_price,
-            "volume_24h": current_price_data.get("volume_24h"),
-            "liquidity": current_price_data.get("liquidity"),
-            "percent_change_24h": current_price_data.get("percent_change_24h"),
-            "percent_change_7d": percent_change_7d,
-            "percent_change_14d": percent_change_14d,
-            "percent_change_30d": percent_change_30d,
-            "dex": current_price_data.get("dex"),
-            "network": current_price_data.get("network"),
-            "pair_name": current_price_data.get("pair_name"),
-            "last_updated": current_price_data.get("last_updated"),
-            "contract_address": current_price_data.get("contract_address"),
-        }
     except Exception as e:
         logger.error(f"Error getting price data for {ticker}: {str(e)}")
         return None
@@ -90,7 +106,6 @@ def get_current_price(ticker):
 
     response = session.get(url, params=parameters)
     data = response.json()
-    logger.info(f"Response data: {data}")
 
     if response.status_code == 200 and data.get("data"):
         pairs = sorted(
@@ -122,14 +137,25 @@ def get_current_price(ticker):
 
 def get_historical_price(ticker, timestamp, contract_address=None, network_id=None, network_slug=None):
     try:
+        # Validate timestamp
+        if not isinstance(timestamp, datetime):
+            logger.error(f"Invalid timestamp format for {ticker}: {timestamp}")
+            return None
+
+        # Check if timestamp is too old
+        if timestamp < datetime.utcnow() - timedelta(days=30):
+            logger.warning(f"Historical price request for {ticker} is older than 30 days")
+
+        if not (contract_address and (network_id or network_slug)):
+            logger.error("Missing contract_address or network information")
+            return None
+
+        # Define the URL for historical data
         url = "https://pro-api.coinmarketcap.com/v4/dex/pairs/ohlcv/historical"
         headers = {
             "Accept": "application/json",
             "X-CMC_PRO_API_KEY": config.COINMARKETCAP_API_KEY,
         }
-
-        if not (contract_address and (network_id or network_slug)):
-            raise ValueError("You must provide a contract_address and either network_id or network_slug.")
 
         time_start = timestamp - timedelta(minutes=60)
         time_end = timestamp + timedelta(minutes=60)
@@ -149,9 +175,6 @@ def get_historical_price(ticker, timestamp, contract_address=None, network_id=No
             parameters["network_slug"] = network_slug
 
         response = requests.get(url, headers=headers, params=parameters)
-        logger.info(f"Request parameters: {parameters}")
-        logger.info(f"Response status code: {response.status_code}")
-        logger.info(f"Response text: {response.text}")
 
         if response.status_code == 200:
             data = response.json()
@@ -172,7 +195,6 @@ def get_historical_price(ticker, timestamp, contract_address=None, network_id=No
                         time_open_str = q.get("time_open")
                         if time_open_str:
                             # Convert ISO8601 to timestamp
-                            from datetime import datetime
                             candle_time = datetime.fromisoformat(time_open_str.replace("Z", "+00:00")).timestamp()
                             q["timestamp_unix"] = candle_time
 

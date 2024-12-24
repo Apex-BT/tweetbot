@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_google_sheets():
-    """Setup Google Sheets connection"""
+    """Setup Google Sheets connection with multiple worksheets"""
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
@@ -23,11 +23,54 @@ def setup_google_sheets():
     )
 
     client = gspread.authorize(credentials)
+    spreadsheet = client.open(config.SPREADSHEET_NAME)
 
-    # Open spreadsheet by name
-    sheet = client.open(config.SPREADSHEET_NAME).sheet1
+    # Setup Tweets worksheet
+    try:
+        tweets_sheet = spreadsheet.worksheet("Tweets")
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            sheet1 = spreadsheet.sheet1
+            sheet1.update_title("Tweets")
+            tweets_sheet = sheet1
+        except:
+            tweets_sheet = spreadsheet.add_worksheet("Tweets", 1000, 20)
 
-    # Updated headers to include all price data fields
+    # Setup Trades worksheet
+    try:
+        trades_sheet = spreadsheet.worksheet("Trades")
+    except gspread.exceptions.WorksheetNotFound:
+        trades_sheet = spreadsheet.add_worksheet("Trades", 1000, 20)
+
+    # Setup PNL worksheet
+    try:
+        pnl_sheet = spreadsheet.worksheet("PNL")
+    except gspread.exceptions.WorksheetNotFound:
+        pnl_sheet = spreadsheet.add_worksheet("PNL", 1000, 15)
+
+    # Setup all worksheets with headers
+    setup_tweets_worksheet(tweets_sheet)
+    setup_trades_worksheet(trades_sheet)
+    setup_pnl_worksheet(pnl_sheet)
+
+    return {
+        "tweets": tweets_sheet,
+        "trades": trades_sheet,
+        "pnl": pnl_sheet
+    }
+
+def update_worksheet_headers(sheet, headers):
+    """Update worksheet headers if they don't match"""
+    values = sheet.get_all_values()
+    if not values or values[0] != headers:
+        if values:
+            logger.info(f"Clearing sheet {sheet.title} to add correct headers")
+            sheet.clear()
+        sheet.append_row(headers)
+        logger.info(f"Added headers to {sheet.title} sheet")
+
+def setup_tweets_worksheet(sheet):
+    """Setup the tweets worksheet headers"""
     headers = [
         "Tweet ID",
         "Text",
@@ -40,29 +83,50 @@ def setup_google_sheets():
         "Volume 24h",
         "Liquidity",
         "Price Change 24h %",
-        "Price Change 7d %",
-        "Price Change 14d %",
-        "Price Change 30d %",
         "DEX",
         "Network",
         "Trading Pair",
         "Contract Address",
         "Last Updated",
     ]
+    update_worksheet_headers(sheet, headers)
 
-    # Check if headers exist
-    values = sheet.get_all_values()
-    if not values or values[0] != headers:
-        if values:
-            logger.info("Clearing sheet to add correct headers")
-            sheet.clear()
-        sheet.append_row(headers)
-        logger.info("Added headers to sheet")
+def setup_trades_worksheet(sheet):
+    """Setup the trades worksheet headers"""
+    headers = [
+        "Trade ID",
+        "Timestamp",
+        "Ticker",
+        "Entry Price",
+        "Position Size",
+        "Direction",  # Long/Short
+        "Stop Loss",
+        "Take Profit",
+        "Tweet ID Reference",
+        "Status",  # Open/Closed
+        "Exit Price",
+        "Exit Timestamp",
+        "PNL Amount",
+        "PNL Percentage",
+        "Notes"
+    ]
+    update_worksheet_headers(sheet, headers)
 
-    return sheet
+def setup_pnl_worksheet(sheet):
+    """Setup the simplified PNL worksheet headers"""
+    headers = [
+        "Ticker",
+        "Entry Timestamp",
+        "Entry Price",
+        "Current Price",
+        "Price Change %"
+        "Invested Amount ($)",
+        "Current Value ($)",
+        "PNL ($)"
+    ]
+    update_worksheet_headers(sheet, headers)
 
-
-def save_tweet_to_sheets(sheet, tweet, ticker, ticker_status, price_data):
+def save_tweet(sheet, tweet, ticker, ticker_status, price_data):
     try:
         row = [
             str(tweet.id),
@@ -76,9 +140,6 @@ def save_tweet_to_sheets(sheet, tweet, ticker, ticker_status, price_data):
             str(price_data["volume_24h"]) if price_data else "N/A",
             str(price_data["liquidity"]) if price_data else "N/A",
             str(price_data["percent_change_24h"]) if price_data else "N/A",
-            str(price_data["percent_change_7d"]) if price_data else "N/A",
-            str(price_data["percent_change_14d"]) if price_data else "N/A",
-            str(price_data["percent_change_30d"]) if price_data else "N/A",
             str(price_data["dex"]) if price_data else "N/A",
             str(price_data["network"]) if price_data else "N/A",
             str(price_data["pair_name"]) if price_data else "N/A",
@@ -92,6 +153,34 @@ def save_tweet_to_sheets(sheet, tweet, ticker, ticker_status, price_data):
     except Exception as e:
         logger.error(f"Error saving to Google Sheets: {str(e)}")
 
+def save_trade(sheet, trade_data, pnl_sheet):
+    """Save trade information to the Trades worksheet and update PNL"""
+    try:
+        if "timestamp" in trade_data:
+            trade_data["timestamp"] = trade_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+
+        row = [
+            trade_data.get("trade_id", ""),
+            trade_data.get("timestamp", ""),
+            trade_data.get("ticker", ""),
+            str(trade_data.get("entry_price", "")),
+            str(trade_data.get("position_size", "")),
+            trade_data.get("direction", ""),
+            str(trade_data.get("stop_loss", "")),
+            str(trade_data.get("take_profit", "")),
+            str(trade_data.get("tweet_id", "")),
+            trade_data.get("status", "Open"),
+            str(trade_data.get("exit_price", "")),
+            str(trade_data.get("exit_timestamp", "")),
+            str(trade_data.get("pnl_amount", "")),
+            str(trade_data.get("pnl_percentage", "")),
+            trade_data.get("notes", "")
+        ]
+
+        sheet.append_row(row)
+        logger.info(f"Trade saved to Google Sheets: {trade_data.get('trade_id')}")
+    except Exception as e:
+        logger.error(f"Error saving trade to Google Sheets: {str(e)}")
 
 def get_sheet_access():
     scope = [
@@ -112,7 +201,6 @@ def get_sheet_access():
 
     print(f"Access granted! Open the spreadsheet at:")
     print(f"https://docs.google.com/spreadsheets/d/{spreadsheet.id}")
-
 
 def setup_new_sheet():
     # Setup credentials
