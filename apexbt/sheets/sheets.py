@@ -73,6 +73,7 @@ def setup_tweets_worksheet(sheet):
     """Setup the tweets worksheet headers"""
     headers = [
         "Tweet ID",
+        "AI Agent",  # New column
         "Text",
         "Created At",
         "Timestamp",
@@ -95,6 +96,7 @@ def setup_trades_worksheet(sheet):
     """Setup the trades worksheet headers"""
     headers = [
         "Trade ID",
+        "AI Agent",  # New column
         "Timestamp",
         "Ticker",
         "Entry Price",
@@ -113,23 +115,25 @@ def setup_trades_worksheet(sheet):
     update_worksheet_headers(sheet, headers)
 
 def setup_pnl_worksheet(sheet):
-    """Setup the simplified PNL worksheet headers"""
+    """Setup the PNL worksheet with sections for each AI agent"""
     headers = [
+        "AI Agent",
         "Ticker",
-        "Entry Timestamp",
+        "Entry Time",
         "Entry Price",
         "Current Price",
-        "Price Change %"
+        "Price Change %",
         "Invested Amount ($)",
         "Current Value ($)",
         "PNL ($)"
     ]
     update_worksheet_headers(sheet, headers)
 
-def save_tweet(sheet, tweet, ticker, ticker_status, price_data):
+def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):
     try:
         row = [
             str(tweet.id),
+            ai_agent,  # Add AI agent
             tweet.text,
             str(tweet.created_at),
             str(datetime.now()),
@@ -161,6 +165,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
 
         row = [
             trade_data.get("trade_id", ""),
+            trade_data.get("ai_agent", ""),
             trade_data.get("timestamp", ""),
             trade_data.get("ticker", ""),
             str(trade_data.get("entry_price", "")),
@@ -225,3 +230,50 @@ def setup_new_sheet():
 
     print(f"Created new spreadsheet: {sh.url}")
     print("Please share this spreadsheet with your Google account email")
+
+def get_latest_tweet_id_by_agent(sheet, ai_agent: str) -> str:
+    """Get the ID of the latest processed tweet for a specific AI agent"""
+    try:
+        values = sheet.get_all_values()
+        if len(values) <= 1:  # Only headers or empty
+            return None
+
+        headers = values[0]
+        tweet_id_index = 0  # First column is Tweet ID
+        ai_agent_index = headers.index("AI Agent")
+
+        # Filter rows for specific AI agent and get tweet IDs
+        tweet_ids = [
+            row[tweet_id_index]
+            for row in values[1:]
+            if row[ai_agent_index] == ai_agent and row[tweet_id_index]
+        ]
+
+        if tweet_ids:
+            return max(tweet_ids)
+
+    except Exception as e:
+        logger.error(f"Error getting latest tweet ID for {ai_agent}: {str(e)}")
+    return None
+
+def is_tweet_processed(sheet, tweet_id: str, ai_agent: str) -> bool:
+    """Check if a specific tweet from an AI agent has already been processed"""
+    try:
+        values = sheet.get_all_values()
+        if len(values) <= 1:  # Only headers or empty
+            return False
+
+        headers = values[0]
+        tweet_id_index = 0  # First column is Tweet ID
+        ai_agent_index = headers.index("AI Agent")
+
+        for row in values[1:]:
+            if (row[tweet_id_index] == str(tweet_id) and
+                row[ai_agent_index] == ai_agent):
+                return True
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error checking processed tweet: {str(e)}")
+        return False

@@ -2,7 +2,7 @@ import apexbt.config.config as config
 import logging
 from requests import Session
 import requests
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -137,13 +137,17 @@ def get_current_price(ticker):
 
 def get_historical_price(ticker, timestamp, contract_address=None, network_id=None, network_slug=None):
     try:
-        # Validate timestamp
+        # Validate timestamp and ensure it's timezone-aware
         if not isinstance(timestamp, datetime):
             logger.error(f"Invalid timestamp format for {ticker}: {timestamp}")
             return None
 
-        # Check if timestamp is too old
-        if timestamp < datetime.utcnow() - timedelta(days=30):
+        # Convert to UTC if timestamp has no timezone
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+        # Compare with UTC now
+        if timestamp < datetime.now(timezone.utc) - timedelta(days=30):
             logger.warning(f"Historical price request for {ticker} is older than 30 days")
 
         if not (contract_address and (network_id or network_slug)):
@@ -180,37 +184,28 @@ def get_historical_price(ticker, timestamp, contract_address=None, network_id=No
             data = response.json()
             pairs = data.get("data", [])
 
-            if pairs:  # Ensure we have at least one pair
-                pair_data = pairs[0]  # Take the first pair
+            if pairs:
+                pair_data = pairs[0]
                 quotes = pair_data.get("quotes", [])
                 if quotes:
-                    # quotes is a list of candle data
-                    # Each candle is a dict with "quote" key and time keys
-                    # To find the closest quote to a certain timestamp:
                     target_ts = timestamp.timestamp()
 
-                    # Convert time_open/time_close to timestamps if needed
                     for q in quotes:
-                        # If there's a time field we need to convert, do so here
                         time_open_str = q.get("time_open")
                         if time_open_str:
-                            # Convert ISO8601 to timestamp
-                            candle_time = datetime.fromisoformat(time_open_str.replace("Z", "+00:00")).timestamp()
+                            # Parse ISO8601 string to timezone-aware datetime
+                            candle_time = datetime.fromisoformat(
+                                time_open_str.replace("Z", "+00:00")
+                            ).timestamp()
                             q["timestamp_unix"] = candle_time
 
-                    # Find the closest candle by timestamp
                     closest_quote = min(quotes, key=lambda x: abs(target_ts - x.get("timestamp_unix", 0)))
-
-                    # Each candle's "quote" field is a list of quote dictionaries; pick the first one
                     candle_quote = closest_quote["quote"][0] if closest_quote.get("quote") else {}
-
-                    # Now you can get "close" price if it exists
                     close_price = candle_quote.get("close")
                     return close_price
 
             logger.error("No quotes found.")
             return None
-
 
         logger.error(f"No valid historical price found for token {ticker}")
         return None
