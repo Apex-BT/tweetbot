@@ -1,4 +1,4 @@
-# tweet.py
+# apexbt/apexbt/tweet/tweet.py
 import tweepy
 import logging
 import re
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from apexbt.config import config
 from typing import Tuple, List, Optional
 import time
-from apexbt.sheets.sheets import get_latest_tweet_id_by_agent
+from apexbt.database.database import get_db_connection
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +28,6 @@ class TwitterManager:
         self.access_token = config.ACCESS_TOKEN
         self.access_token_secret = config.ACCESS_TOKEN_SECRET
         self.bearer_token = config.BEARER_TOKEN
-
         self.client = self._setup_client()
 
     def _setup_client(self) -> tweepy.Client:
@@ -82,8 +81,25 @@ class TwitterManager:
         else:
             return tickers[0].upper(), "Single ticker"
 
-    def fetch_historical_tweets(self, username: str, start_date: datetime, tweets_sheet=None) -> List[MockTweet]:
-        """Fetch historical tweets from a specific user since start_date with improved rate limit handling"""
+    def get_latest_tweet_id_by_agent(self, username: str) -> Optional[str]:
+        """Get the latest processed tweet ID for a specific AI agent from database"""
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tweet_id FROM tweets
+                    WHERE ai_agent = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (username,))
+                result = cursor.fetchone()
+                return result['tweet_id'] if result else None
+        except Exception as e:
+            logger.error(f"Error getting latest tweet ID for {username}: {str(e)}")
+            return None
+
+    def fetch_historical_tweets(self, username: str, start_date: datetime) -> List[MockTweet]:
+        """Fetch historical tweets (excluding replies) from a specific user since start_date"""
         historical_tweets = []
         user_id = self.get_user_id(username)
 
@@ -91,11 +107,8 @@ class TwitterManager:
             logger.error(f"Could not find user ID for {username}")
             return []
 
-        # Get the latest processed tweet ID for this specific user/agent
-        latest_tweet_id = None
-        if tweets_sheet:
-            latest_tweet_id = get_latest_tweet_id_by_agent(tweets_sheet, username)
-            logger.info(f"Latest processed tweet ID for {username}: {latest_tweet_id}")
+        latest_tweet_id = self.get_latest_tweet_id_by_agent(username)
+        logger.info(f"Latest processed tweet ID for {username}: {latest_tweet_id}")
 
         if start_date.tzinfo is None:
             start_date = start_date.replace(tzinfo=timezone.utc)
@@ -111,20 +124,21 @@ class TwitterManager:
 
         while True:
             try:
-                # Add delay between requests that increases with batch count
                 base_delay = 5
                 batch_delay = min(base_delay + (batch_count * 2), 30)
                 logger.info(f"Waiting {batch_delay} seconds before next request...")
                 time.sleep(batch_delay)
 
+                # Add exclude parameter to filter out replies
                 tweets = self.client.get_users_tweets(
                     id=user_id,
-                    tweet_fields=['created_at'],
+                    tweet_fields=['created_at', 'referenced_tweets'],  # Add referenced_tweets field
                     max_results=100,
                     pagination_token=pagination_token,
                     since_id=latest_tweet_id,
                     start_time=start_time,
-                    end_time=end_time
+                    end_time=end_time,
+                    exclude=['replies']  # Exclude replies
                 )
 
                 total_requests += 1
@@ -136,6 +150,10 @@ class TwitterManager:
 
                 new_tweets = 0
                 for tweet in tweets.data:
+                    # Skip if it's a reply or retweet
+                    if hasattr(tweet, 'referenced_tweets') and tweet.referenced_tweets:
+                        continue
+
                     if latest_tweet_id and str(tweet.id) <= latest_tweet_id:
                         continue
 
@@ -154,7 +172,7 @@ class TwitterManager:
                         new_tweets += 1
 
                 batch_count += 1
-                logger.info(f"Batch {batch_count}: Fetched {new_tweets} new tweets from @{username}")
+                logger.info(f"Batch {batch_count}: Fetched {new_tweets} new original tweets from @{username}")
 
                 if new_tweets == 0:
                     logger.info(f"No new tweets in this batch for @{username}")
@@ -190,39 +208,6 @@ class TwitterManager:
         logger.info(f"Completed fetching tweets for @{username}. Total tweets: {len(historical_tweets)}")
         return historical_tweets
 
-    def stream_user_tweets(self, username: str, callback, delay: int = 60):
-        """Stream new tweets from a user with a callback function"""
-        user_id = self.get_user_id(username)
-        if not user_id:
-            return
-
-        latest_tweet_id = None
-
-        while True:
-            try:
-                tweets = self.client.get_users_tweets(
-                    id=user_id,
-                    tweet_fields=["created_at"],
-                    since_id=latest_tweet_id,
-                    max_results=10,
-                )
-
-                if tweets.data:
-                    latest_tweet_id = tweets.data[0].id
-                    for tweet in tweets.data:
-                        mock_tweet = MockTweet(
-                            id=tweet.id,
-                            text=tweet.text,
-                            created_at=tweet.created_at
-                        )
-                        callback(mock_tweet)
-
-                time.sleep(delay)
-
-            except Exception as e:
-                logger.error(f"Error streaming tweets: {str(e)}")
-                time.sleep(delay)
-
     def monitor_multiple_users(self, usernames: List[str], callback, delay: int = 60):
         """Monitor tweets from multiple users"""
         user_ids = {}
@@ -233,43 +218,48 @@ class TwitterManager:
             user_id = self.get_user_id(username)
             if user_id:
                 user_ids[username] = user_id
-                latest_tweet_ids[username] = None
+                latest_tweet_ids[username] = self.get_latest_tweet_id_by_agent(username)
             else:
                 logger.error(f"Could not find user ID for {username}")
 
         while True:
-            try:
-                for username, user_id in user_ids.items():
-                    try:
-                        tweets = self.client.get_users_tweets(
-                            id=user_id,
-                            tweet_fields=["created_at"],
-                            since_id=latest_tweet_ids[username],
-                            max_results=10,
-                        )
+                try:
+                    for username, user_id in user_ids.items():
+                        try:
+                            tweets = self.client.get_users_tweets(
+                                id=user_id,
+                                tweet_fields=["created_at", "referenced_tweets"],
+                                since_id=latest_tweet_ids[username],
+                                max_results=10,
+                                exclude=['replies']  # Exclude replies
+                            )
 
-                        if tweets.data:
-                            latest_tweet_ids[username] = tweets.data[0].id
-                            for tweet in tweets.data:
-                                mock_tweet = MockTweet(
-                                    id=tweet.id,
-                                    text=tweet.text,
-                                    created_at=tweet.created_at
-                                )
-                                callback(mock_tweet)
+                            if tweets.data:
+                                latest_tweet_ids[username] = tweets.data[0].id
+                                for tweet in tweets.data:
+                                    # Skip if it's a reply or retweet
+                                    if hasattr(tweet, 'referenced_tweets') and tweet.referenced_tweets:
+                                        continue
 
-                        time.sleep(2)  # Small delay between users
+                                    mock_tweet = MockTweet(
+                                        id=tweet.id,
+                                        text=tweet.text,
+                                        created_at=tweet.created_at,
+                                        author=username
+                                    )
+                                    callback(mock_tweet)
 
-                    except Exception as e:
-                        logger.error(f"Error fetching tweets for {username}: {str(e)}")
-                        continue
+                            time.sleep(2)  # Small delay between users
 
-                time.sleep(delay)
+                        except Exception as e:
+                            logger.error(f"Error fetching tweets for {username}: {str(e)}")
+                            continue
 
-            except Exception as e:
-                logger.error(f"Error in monitor loop: {str(e)}")
-                time.sleep(delay)
+                    time.sleep(delay)
 
+                except Exception as e:
+                    logger.error(f"Error in monitor loop: {str(e)}")
+                    time.sleep(delay)
 
 def exponential_backoff(retry_count):
     """Implement exponential backoff for rate limiting"""

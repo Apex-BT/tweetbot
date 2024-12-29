@@ -1,3 +1,4 @@
+# apexbt/apexbt/trade/trade.py
 import time
 import threading
 import logging
@@ -5,7 +6,7 @@ from dataclasses import dataclass
 from apexbt.crypto.crypto import get_current_price
 from typing import List
 from datetime import datetime
-from tenacity import retry, stop_after_attempt, wait_exponential
+from apexbt.database.database import get_db_connection
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,48 +20,42 @@ class TradePosition:
     status: str = "Open"
 
 class TradeManager:
-    def __init__(self, sheets_dict, update_interval=60):
-        self.trades_sheet = sheets_dict["trades"]
-        self.pnl_sheet = sheets_dict["pnl"]
+    def __init__(self, update_interval=60):
         self.update_interval = update_interval
         self.active_trades: List[TradePosition] = []
         self.is_running = False
         self.update_thread = None
-        self.last_update = 0  # Track last update time
-        self.MIN_UPDATE_INTERVAL = 2  # Minimum seconds between updates
+        self.last_update = 0
+        self.MIN_UPDATE_INTERVAL = 2
         self.load_active_trades()
 
     def load_active_trades(self):
-        """Load active trades from trades sheet"""
+        """Load active trades from database"""
         try:
-            values = self.trades_sheet.get_all_values()
-            if len(values) < 2:  # Only headers or empty
-                return
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT ticker, entry_price, timestamp, ai_agent
+                    FROM trades
+                    WHERE status = 'Open'
+                """)
+                trades = cursor.fetchall()
 
-            headers = values[0]
-            status_idx = headers.index("Status")
-
-            for row in values[1:]:
-                if row[status_idx] == "Open":
-                    timestamp_str = row[headers.index("Timestamp")]
+                self.active_trades = []
+                for trade in trades:
                     try:
-                        # First try with microseconds
-                        entry_timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S.%f")
+                        entry_timestamp = datetime.strptime(trade['timestamp'],
+                                                          "%Y-%m-%d %H:%M:%S.%f")
                     except ValueError:
-                        try:
-                            # If that fails, try without microseconds
-                            entry_timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                        except ValueError:
-                            logger.warning(f"Invalid timestamp format for {row[headers.index('Ticker')]}: {timestamp_str}")
-                            continue
+                        entry_timestamp = datetime.strptime(trade['timestamp'],
+                                                          "%Y-%m-%d %H:%M:%S")
 
-                    trade = TradePosition(
-                        ticker=row[headers.index("Ticker")],
-                        entry_price=float(row[headers.index("Entry Price")]),
+                    self.active_trades.append(TradePosition(
+                        ticker=trade['ticker'],
+                        entry_price=float(trade['entry_price']),
                         entry_timestamp=entry_timestamp,
-                        ai_agent=row[headers.index("AI Agent")]
-                    )
-                    self.active_trades.append(trade)
+                        ai_agent=trade['ai_agent']
+                    ))
 
             logger.info(f"Loaded {len(self.active_trades)} active trades")
         except Exception as e:
@@ -91,173 +86,152 @@ class TradeManager:
                 logger.error(f"Error in trade monitoring: {str(e)}")
                 time.sleep(60)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        reraise=True
-    )
-    def update_sheets_with_backoff(self, rows):
-        """Update sheets with retry and backoff"""
-        # Ensure minimum time between updates
-        time_since_last = time.time() - self.last_update
-        if time_since_last < self.MIN_UPDATE_INTERVAL:
-            time.sleep(self.MIN_UPDATE_INTERVAL - time_since_last)
+    def update_pnl(self, stats, sheets=None):
+        """Update PNL in both database and Google Sheets"""
+        # Update database
+        self.update_pnl_table(stats)
 
-        self.pnl_sheet.clear()
-        self.pnl_sheet.append_rows(rows)
-        self.last_update = time.time()
+        # Update Google Sheets if available
+        if sheets and 'pnl' in sheets:
+            from apexbt.sheets.sheets import update_pnl_sheet
+            update_pnl_sheet(sheets['pnl'], stats)
 
-    def update_trade_prices(self):
-        """Update current prices for all active trades with per-agent grouping"""
+    def update_pnl_table(self, stats):
+        """Update PNL table in database"""
         try:
-            # Prepare header row
-            rows = [["AI Agent", "Ticker", "Entry Time", "Entry Price", "Current Price",
-                    "Price Change %", "Invested Amount ($)", "Current Value ($)", "PNL ($)"]]
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
 
-            # Group trades by AI agent
-            agent_trades = {}
+                # Clear existing PNL data
+                cursor.execute("DELETE FROM pnl")
+
+                # Insert new PNL data
+                for stat in stats:
+                    if stat['type'] == 'trade':
+                        cursor.execute("""
+                            INSERT INTO pnl (
+                                ai_agent, ticker, entry_time, entry_price,
+                                current_price, price_change_percentage,
+                                invested_amount, current_value, pnl,
+                                contract_address
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            stat['ai_agent'],
+                            stat['ticker'],
+                            stat['entry_time'],
+                            stat['entry_price'],
+                            stat['current_price'],
+                            float(stat['price_change'].rstrip('%')),
+                            stat['invested_amount'],
+                            stat['current_value'],
+                            stat['pnl_dollars'],
+                            stat.get('contract_address', None)  # Add contract address
+                        ))
+
+                conn.commit()
+                self.last_update = time.time()
+
+        except Exception as e:
+            logger.error(f"Error updating PNL table: {str(e)}")
+            raise
+
+    def update_trade_prices(self, sheets=None):
+        """Update current prices for all active trades"""
+        try:
+            stats = []
+            agent_totals = {}
+            grand_total = {'invested_amount': 0, 'current_value': 0, 'pnl_dollars': 0}
+
+            # Process trades by agent
             for trade in self.active_trades:
-                if trade.ai_agent not in agent_trades:
-                    agent_trades[trade.ai_agent] = []
-                agent_trades[trade.ai_agent].append(trade)
+                price_data = get_current_price(trade.ticker)
+                if price_data and price_data.get("price"):
+                    current_price = float(price_data["price"])
+                    price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
 
-            grand_total_invested = 0
-            grand_total_current = 0
-            grand_total_pnl = 0
+                    invested_amount = 100.0
+                    current_value = invested_amount * (1 + price_change/100)
+                    pnl = current_value - invested_amount
 
-            for agent, trades in agent_trades.items():
-                agent_total_invested = 0
-                agent_total_current = 0
-                agent_total_pnl = 0
+                    # Update agent totals
+                    if trade.ai_agent not in agent_totals:
+                        agent_totals[trade.ai_agent] = {
+                            'invested_amount': 0,
+                            'current_value': 0,
+                            'pnl_dollars': 0
+                        }
 
-                for trade in trades:
-                    price_data = get_current_price(trade.ticker)
-                    if price_data and price_data.get("price"):
-                        current_price = float(price_data["price"])
-                        price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
+                    agent_totals[trade.ai_agent]['invested_amount'] += invested_amount
+                    agent_totals[trade.ai_agent]['current_value'] += current_value
+                    agent_totals[trade.ai_agent]['pnl_dollars'] += pnl
 
-                        invested_amount = 100.0  # Fixed investment amount
-                        current_value = invested_amount * (1 + price_change/100)
-                        pnl = current_value - invested_amount
+                    # Add trade stats
+                    stats.append({
+                        'type': 'trade',
+                        'ai_agent': trade.ai_agent,
+                        'ticker': trade.ticker,
+                        'entry_time': trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        'entry_price': trade.entry_price,
+                        'current_price': current_price,
+                        'price_change': f"{price_change:.2f}%",
+                        'invested_amount': invested_amount,
+                        'current_value': current_value,
+                        'pnl_dollars': pnl,
+                        'contract_address': price_data.get('contract_address')  # Add contract address
+                    })
 
-                        agent_total_invested += invested_amount
-                        agent_total_current += current_value
-                        agent_total_pnl += pnl
+            # Add agent totals
+            for agent, totals in agent_totals.items():
+                stats.append({
+                    'type': 'agent_total',
+                    'agent': agent,
+                    **totals
+                })
+                grand_total['invested_amount'] += totals['invested_amount']
+                grand_total['current_value'] += totals['current_value']
+                grand_total['pnl_dollars'] += totals['pnl_dollars']
 
-                        rows.append([
-                            agent,
-                            trade.ticker,
-                            trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                            f"{trade.entry_price:.8f}",
-                            f"{current_price:.8f}",
-                            f"{price_change:.2f}",
-                            f"{invested_amount:.2f}",
-                            f"{current_value:.2f}",
-                            f"{pnl:.2f}"
-                        ])
+            # Add grand total
+            stats.append({
+                'type': 'grand_total',
+                **grand_total
+            })
 
-                # Add agent totals
-                if len(trades) > 0:
-                    rows.append([""] * 9)  # Blank row
-                    rows.append([
-                        f"{agent} TOTALS",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        f"{agent_total_invested:.2f}",
-                        f"{agent_total_current:.2f}",
-                        f"{agent_total_pnl:.2f}"
-                    ])
-                    rows.append([""] * 9)  # Blank row
-
-                    grand_total_invested += agent_total_invested
-                    grand_total_current += agent_total_current
-                    grand_total_pnl += agent_total_pnl
-
-            # Add grand totals
-            if grand_total_invested > 0:
-                rows.append([
-                    "GRAND TOTALS",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    f"{grand_total_invested:.2f}",
-                    f"{grand_total_current:.2f}",
-                    f"{grand_total_pnl:.2f}"
-                ])
-
-            # Update sheets with all rows at once
-            if len(rows) > 1:
-                self.update_sheets_with_backoff(rows)
-                logger.info("Updated prices for all active trades")
+            # Update database
+            self.update_pnl(stats, sheets)
+            logger.info("Updated prices for all active trades")
 
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
 
     def get_current_stats(self):
-        """Get current prices and changes for all active trades"""
+        """Get current statistics from database"""
         try:
-            values = self.pnl_sheet.get_all_values()
-            if len(values) < 2:  # Check if there's data beyond headers
-                return []
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM pnl ORDER BY ai_agent, ticker")
+                rows = cursor.fetchall()
 
-            headers = values[0]
-            stats = []
-            current_agent = None
-            agent_totals = {
-                'invested_amount': 0,
-                'current_value': 0,
-                'pnl_dollars': 0
-            }
+                stats = []
+                current_agent = None
+                agent_totals = {'invested_amount': 0, 'current_value': 0, 'pnl_dollars': 0}
 
-            # Skip header row
-            for row in values[1:]:
-                if not any(row):  # Skip empty rows
-                    continue
+                for row in rows:
+                    stats.append({
+                        'type': 'trade',
+                        'ai_agent': row['ai_agent'],
+                        'ticker': row['ticker'],
+                        'contract_address': row['contract_address'],
+                        'entry_time': row['entry_time'],
+                        'entry_price': row['entry_price'],
+                        'current_price': row['current_price'],
+                        'price_change': f"{row['price_change_percentage']:.2f}%",
+                        'invested_amount': row['invested_amount'],
+                        'current_value': row['current_value'],
+                        'pnl_dollars': row['pnl']
+                    })
 
-                # Check if this is a totals row
-                if row[0].endswith('TOTALS'):
-                    if row[0] == 'GRAND TOTALS':
-                        stats.append({
-                            'type': 'grand_total',
-                            'invested_amount': float(row[6]) if row[6] else 0,
-                            'current_value': float(row[7]) if row[7] else 0,
-                            'pnl_dollars': float(row[8]) if row[8] else 0
-                        })
-                    else:
-                        # Agent totals
-                        agent = row[0].replace(' TOTALS', '')
-                        stats.append({
-                            'type': 'agent_total',
-                            'agent': agent,
-                            'invested_amount': float(row[6]) if row[6] else 0,
-                            'current_value': float(row[7]) if row[6] else 0,
-                            'pnl_dollars': float(row[8]) if row[8] else 0
-                        })
-                else:
-                    # Regular trade row
-                    try:
-                        stats.append({
-                            'type': 'trade',
-                            'ai_agent': row[0],  # AI Agent column
-                            'ticker': row[1],    # Ticker column
-                            'entry_time': row[2],
-                            'entry_price': float(row[3]),
-                            'current_price': float(row[4]),
-                            'price_change': row[5],
-                            'invested_amount': float(row[6]),
-                            'current_value': float(row[7]),
-                            'pnl_dollars': float(row[8])
-                        })
-                    except (ValueError, IndexError) as e:
-                        logger.warning(f"Skipping invalid row: {row}. Error: {str(e)}")
-                        continue
-
-            return stats
+                return stats
 
         except Exception as e:
             logger.error(f"Error getting current stats: {str(e)}")
@@ -269,11 +243,7 @@ class TradeManager:
                   for trade in self.active_trades)
 
     def add_trade(self, ticker: str, entry_price: float, ai_agent: str, entry_timestamp: datetime = None) -> bool:
-        """
-        Add a new trade to active trades
-        Returns True if trade was added, False if trade already exists
-        entry_timestamp: Optional timestamp for historical analysis (defaults to current time)
-        """
+        """Add a new trade to active trades"""
         if self.has_open_trade(ticker):
             logger.warning(f"Trade for {ticker} already exists - skipping")
             return False
@@ -288,6 +258,33 @@ class TradeManager:
             status="Open",
             ai_agent=ai_agent
         )
-        self.active_trades.append(trade)
-        logger.info(f"Added new trade for {ticker} at price {entry_price} (entry time: {entry_timestamp})")
-        return True
+
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO trades (
+                        trade_id, ai_agent, timestamp, ticker,
+                        entry_price, position_size, direction,
+                        status, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    f"T{entry_timestamp.strftime('%Y%m%d%H%M%S')}",
+                    ai_agent,
+                    entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    ticker,
+                    entry_price,
+                    100.0,  # Fixed position size
+                    "Long",  # Default direction
+                    "Open",
+                    "Auto trade based on tweet signal"
+                ))
+                conn.commit()
+
+            self.active_trades.append(trade)
+            logger.info(f"Added new trade for {ticker} at price {entry_price}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error adding trade to database: {str(e)}")
+            return False

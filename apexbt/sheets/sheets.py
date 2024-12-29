@@ -119,6 +119,7 @@ def setup_pnl_worksheet(sheet):
     headers = [
         "AI Agent",
         "Ticker",
+        "Contract Address",  # Added contract address column
         "Entry Time",
         "Entry Price",
         "Current Price",
@@ -230,6 +231,96 @@ def setup_new_sheet():
 
     print(f"Created new spreadsheet: {sh.url}")
     print("Please share this spreadsheet with your Google account email")
+
+def update_pnl_sheet(sheet, stats):
+    """Update PNL worksheet with current statistics"""
+    try:
+        # Clear existing data but keep headers
+        sheet.clear()
+        sheet.append_row([
+            "AI Agent",
+            "Ticker",
+            "Contract Address",
+            "Entry Time",
+            "Entry Price",
+            "Current Price",
+            "Price Change %",
+            "Invested Amount ($)",
+            "Current Value ($)",
+            "PNL ($)"
+        ])
+
+        # Group trades by AI agent and calculate totals
+        agent_trades = {}
+        portfolio_total = {
+            'invested_amount': 0,
+            'current_value': 0,
+            'pnl_dollars': 0
+        }
+
+        for stat in stats:
+            if stat['type'] == 'trade':
+                agent = stat['ai_agent']
+                if agent not in agent_trades:
+                    agent_trades[agent] = {
+                        'trades': [],
+                        'invested_amount': 0,
+                        'current_value': 0,
+                        'pnl_dollars': 0
+                    }
+
+                agent_trades[agent]['trades'].append(stat)
+                agent_trades[agent]['invested_amount'] += stat['invested_amount']
+                agent_trades[agent]['current_value'] += stat['current_value']
+                agent_trades[agent]['pnl_dollars'] += stat['pnl_dollars']
+
+                # Add to portfolio totals
+                portfolio_total['invested_amount'] += stat['invested_amount']
+                portfolio_total['current_value'] += stat['current_value']
+                portfolio_total['pnl_dollars'] += stat['pnl_dollars']
+
+        # Write trades grouped by agent with totals
+        for agent, data in agent_trades.items():
+            # Write individual trades
+            for trade in data['trades']:
+                row = [
+                    trade['ai_agent'],
+                    trade['ticker'],
+                    trade.get('contract_address', 'N/A'),
+                    trade['entry_time'],
+                    f"${trade['entry_price']:.8f}",
+                    f"${trade['current_price']:.8f}",
+                    trade['price_change'],
+                    f"${trade['invested_amount']:.2f}",
+                    f"${trade['current_value']:.2f}",
+                    f"${trade['pnl_dollars']:.2f}"
+                ]
+                sheet.append_row(row)
+
+            # Write agent totals
+            sheet.append_row([])  # Empty row
+            sheet.append_row([
+                f"{agent} Totals",
+                "", "", "", "", "", "",
+                f"${data['invested_amount']:.2f}",
+                f"${data['current_value']:.2f}",
+                f"${data['pnl_dollars']:.2f}"
+            ])
+            sheet.append_row([])  # Empty row
+
+        # Write portfolio totals
+        sheet.append_row([
+            "Portfolio Totals",
+            "", "", "", "", "", "",
+            f"${portfolio_total['invested_amount']:.2f}",
+            f"${portfolio_total['current_value']:.2f}",
+            f"${portfolio_total['pnl_dollars']:.2f}"
+        ])
+
+        logger.info("PNL data updated in Google Sheets")
+
+    except Exception as e:
+        logger.error(f"Error updating PNL sheet: {str(e)}")
 
 def get_latest_tweet_id_by_agent(sheet, ai_agent: str) -> str:
     """Get the ID of the latest processed tweet for a specific AI agent"""
