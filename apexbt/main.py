@@ -7,6 +7,7 @@ from apexbt.utils.sample_tweets import sample_tweets
 import time
 import logging
 from apexbt.sheets.sheets import setup_google_sheets
+from apexbt.database.database import get_db_connection
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +70,132 @@ def process_tweets(tweets):
             continue
 
     return trade_manager
+
+def reprocess_null_price_tweets():
+    """Reprocess tweets with NULL prices in the database"""
+    logger.info("Reprocessing tweets with NULL prices...")
+
+    try:
+        # Initialize trade manager
+        trade_manager = TradeManager()
+        trade_manager.start_monitoring()
+
+        # Get tweets with NULL prices from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT tweet_id, ai_agent, text, created_at, ticker, ticker_status
+                FROM tweets
+                WHERE current_price IS NULL
+                AND ticker IS NOT NULL
+                AND ticker != 'N/A'
+                ORDER BY created_at
+            """)
+            null_price_tweets = cursor.fetchall()
+
+        logger.info(f"Found {len(null_price_tweets)} tweets to reprocess")
+
+        for tweet in null_price_tweets:
+            try:
+                # Parse created_at with multiple format attempts
+                created_at = None
+                datetime_formats = [
+                    "%Y-%m-%d %H:%M:%S.%f",
+                    "%Y-%m-%d %H:%M:%S%z",
+                    "%Y-%m-%d %H:%M:%S+00:00",
+                    "%Y-%m-%d %H:%M:%S"
+                ]
+
+                for dt_format in datetime_formats:
+                    try:
+                        created_at = datetime.strptime(tweet['created_at'], dt_format)
+                        break
+                    except ValueError:
+                        continue
+
+                if not created_at:
+                    logger.error(f"Could not parse datetime for tweet {tweet['tweet_id']}: {tweet['created_at']}")
+                    continue
+
+                # Get current price data
+                price_data = get_crypto_price(tweet['ticker'], created_at, include_historical=False)
+
+                if price_data and price_data.get("tweet_time_price"):
+                    # Update tweet price data
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            UPDATE tweets
+                            SET current_price = ?,
+                                tweet_time_price = ?,
+                                volume_24h = ?,
+                                liquidity = ?,
+                                price_change_24h = ?,
+                                dex = ?,
+                                network = ?,
+                                trading_pair = ?,
+                                contract_address = ?,
+                                last_updated = ?
+                            WHERE tweet_id = ?
+                        """, (
+                            price_data.get("current_price"),
+                            price_data.get("tweet_time_price"),
+                            price_data.get("volume_24h"),
+                            price_data.get("liquidity"),
+                            price_data.get("percent_change_24h"),
+                            price_data.get("dex"),
+                            price_data.get("network"),
+                            price_data.get("pair_name"),
+                            price_data.get("contract_address"),
+                            datetime.now(),
+                            tweet['tweet_id']
+                        ))
+                        conn.commit()
+
+                    # Create trade if not exists
+                    trade_data = {
+                        "trade_id": f"T{created_at.strftime('%Y%m%d%H%M%S')}",
+                        "ai_agent": tweet['ai_agent'],
+                        "ticker": tweet['ticker'],
+                        "entry_price": price_data["tweet_time_price"],
+                        "position_size": 100,
+                        "direction": "Long",
+                        "stop_loss": float(price_data["tweet_time_price"]) * 0.95,
+                        "take_profit": float(price_data["tweet_time_price"]) * 1.15,
+                        "tweet_id": tweet['tweet_id'],
+                        "notes": "Auto trade based on reprocessed tweet",
+                        "timestamp": created_at
+                    }
+
+                    if trade_manager.add_trade(tweet['ticker'],
+                                             float(price_data["tweet_time_price"]),
+                                             tweet['ai_agent'],
+                                             created_at):
+                        save_trade(trade_data)
+                        logger.info(f"Created new trade for {tweet['ticker']} at {price_data['tweet_time_price']}")
+
+                    logger.info(f"Updated price data for tweet {tweet['tweet_id']}")
+                else:
+                    logger.warning(f"No price data found for {tweet['ticker']}")
+
+                time.sleep(1)  # Rate limiting
+
+            except Exception as e:
+                logger.error(f"Error processing tweet {tweet['tweet_id']}: {str(e)}")
+                continue
+
+        logger.info("Completed reprocessing tweets")
+
+        try:
+            monitor_positions(trade_manager)
+        except KeyboardInterrupt:
+            logger.info("Stopping trade manager...")
+            trade_manager.stop_monitoring()
+
+    except Exception as e:
+        logger.error(f"Error during reprocessing: {str(e)}")
+        if trade_manager:
+            trade_manager.stop_monitoring()
 
 def process_sample_tweets():
     """Process the sample tweets for testing purposes"""
@@ -281,4 +408,7 @@ if __name__ == "__main__":
     # run_historical_analysis(start_date, sheets)
 
     # 3. Just monitor existing trades
-    run_trade_manager_only(sheets)
+    # run_trade_manager_only(sheets)
+
+    # 4. Reprocess tweets with NULL prices
+    reprocess_null_price_tweets()
