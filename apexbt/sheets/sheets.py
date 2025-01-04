@@ -141,7 +141,7 @@ def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):
             ticker if ticker else "N/A",
             ticker_status,
             str(price_data["current_price"]) if price_data else "N/A",
-            str(price_data["tweet_time_price"]) if price_data else "N/A",
+            "N/A",
             str(price_data["volume_24h"]) if price_data else "N/A",
             str(price_data["liquidity"]) if price_data else "N/A",
             str(price_data["percent_change_24h"]) if price_data else "N/A",

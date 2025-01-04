@@ -38,6 +38,60 @@ class RateLimiter:
 
 rate_limiter = RateLimiter()
 
+def get_crypto_price_dexscreener(ticker):
+    """
+    Get cryptocurrency price data from DexScreener API
+
+    Args:
+        ticker: Cryptocurrency ticker symbol
+
+    Returns: Dictionary containing price data or None if not found
+    """
+    try:
+        # DexScreener API endpoint
+        url = f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
+
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            data = response.json()
+            pairs = data.get('pairs', [])
+
+            if not pairs:
+                logger.warning(f"No pairs found for {ticker} on DexScreener")
+                return None
+
+            # Sort pairs by liquidity (USD) in descending order
+            sorted_pairs = sorted(
+                pairs,
+                key=lambda x: float(x.get('liquidity', {}).get('usd', 0)),
+                reverse=True
+            )
+
+            # Get the pair with highest liquidity
+            best_pair = sorted_pairs[0]
+
+            return {
+                "current_price": float(best_pair.get('priceUsd', 0)),
+                "volume_24h": float(best_pair.get('volume', {}).get('h24', 0)),
+                "liquidity": float(best_pair.get('liquidity', {}).get('usd', 0)),
+                "percent_change_24h": float(best_pair.get('priceChange', {}).get('h24', 0)),
+                "dex": best_pair.get('dexId'),
+                "network": best_pair.get('chainId'),
+                "pair_name": f"{best_pair.get('baseToken', {}).get('symbol')}/{best_pair.get('quoteToken', {}).get('symbol')}",
+                "last_updated": best_pair.get('pairCreatedAt'),
+                "contract_address": best_pair.get('pairAddress'),
+                "base_token_address": best_pair.get('baseToken', {}).get('address'),
+            }
+
+        else:
+            logger.error(f"DexScreener API error ({response.status_code}): {response.text}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error getting DexScreener price for {ticker}: {str(e)}")
+        return None
+
 def get_crypto_price(ticker, timestamp=None, include_historical=False):
     """
     Get cryptocurrency price data including historical prices
@@ -212,17 +266,32 @@ def get_coinmarketcap_standard_price(ticker):
         contract_address = None
 
         if info_data.get("data"):
-                    data_items = info_data["data"].get(ticker, [])
-                    if isinstance(data_items, list) and data_items:
-                        token = data_items[0]  # Take first matching token
-                        token_id = token.get("id")
-                        platform = token.get("platform", {})
-                        if platform:
-                            platform_name = platform.get("name")
-                            contract_address = platform.get("token_address")
+            data_items = info_data["data"].get(ticker, [])
+            if isinstance(data_items, list):
+                # Filter for tokens on Arbitrum or Solana platforms
+                filtered_tokens = []
+                for token in data_items:
+                    # Check contract_address array for Arbitrum or Solana
+                    contract_addresses = token.get("contract_address", [])
+                    for addr in contract_addresses:
+                        if addr.get("platform", {}).get("name") in ["Arbitrum", "Solana"]:
+                            filtered_tokens.append(token)
+                            platform_name = addr["platform"]["name"]
+                            contract_address = addr["contract_address"]
+                            break
+
+                    # Also check platform field as backup
+                    if token.get("platform", {}).get("name") in ["Arbitrum", "Solana"]:
+                        filtered_tokens.append(token)
+                        platform_name = token["platform"]["name"]
+                        contract_address = token["platform"]["token_address"]
+
+                if filtered_tokens:
+                    token = filtered_tokens[0]  # Take first matching token
+                    token_id = token.get("id")
 
         if not token_id:
-            logger.warning(f"Could not find token ID for {ticker}")
+            logger.warning(f"Could not find token ID for {ticker} on Arbitrum or Solana")
             return None
 
         # Get current price data
@@ -243,7 +312,12 @@ def get_coinmarketcap_standard_price(ticker):
 
         if response.status_code == 200 and data.get("data"):
             ticker_data = None
-            if isinstance(data["data"], list):
+            if ticker in data["data"]:
+                # Handle dictionary with list value
+                ticker_list = data["data"][ticker]
+                if isinstance(ticker_list, list) and ticker_list:
+                    ticker_data = ticker_list[0]
+            elif isinstance(data["data"], list):
                 # Handle list response
                 ticker_data = next((item for item in data["data"]
                                   if item.get("symbol") == ticker), None)
@@ -388,6 +462,10 @@ def get_coinmarketcap_standard_historical_price(ticker, timestamp):
         platform_params = {"symbol": ticker}
         platform_response = requests.get(platform_url, headers=headers, params=platform_params)
 
+        # Log token info API response
+        logger.info(f"Token Info API Response for {ticker}: Status={platform_response.status_code}")
+        logger.debug(f"Token Info API Raw Response: {platform_response.text}")
+
         if platform_response.status_code != 200:
             logger.error(f"Failed to get token info for {ticker}")
             return None
@@ -396,13 +474,36 @@ def get_coinmarketcap_standard_historical_price(ticker, timestamp):
 
         # Get token ID
         token_id = None
+        platform_name = None
+        contract_address = None
+
         if platform_data.get("data"):
             data_items = platform_data["data"].get(ticker, [])
-            if isinstance(data_items, list) and data_items:
-                token_id = data_items[0].get("id")
+            if isinstance(data_items, list):
+                # Filter for tokens on Arbitrum or Solana platforms
+                filtered_tokens = []
+                for token in data_items:
+                    # Check contract_address array for Arbitrum or Solana
+                    contract_addresses = token.get("contract_address", [])
+                    for addr in contract_addresses:
+                        if addr.get("platform", {}).get("name") in ["Arbitrum", "Solana"]:
+                            filtered_tokens.append(token)
+                            platform_name = addr["platform"]["name"]
+                            contract_address = addr["contract_address"]
+                            break
+
+                    # Also check platform field as backup
+                    if token.get("platform", {}).get("name") in ["Arbitrum", "Solana"]:
+                        filtered_tokens.append(token)
+                        platform_name = token["platform"]["name"]
+                        contract_address = token["platform"]["token_address"]
+
+                if filtered_tokens:
+                    token = filtered_tokens[0]  # Take first matching token
+                    token_id = token.get("id")
 
         if not token_id:
-            logger.warning(f"Could not find token ID for {ticker}")
+            logger.warning(f"Could not find token ID for {ticker} on Arbitrum or Solana")
             return None
 
         # Convert timestamp to UTC if needed
@@ -419,14 +520,14 @@ def get_coinmarketcap_standard_historical_price(ticker, timestamp):
 
         # Get historical quotes using the correct endpoint and parameters
         rate_limiter.wait_if_needed()
-        quotes_url = "https://pro-api.coinmarketcap.com/v3/cryptocurrency/quotes/historical"
+        quotes_url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/historical"
 
         parameters = {
             "id": token_id,
             "time_start": time_start_str,
             "time_end": time_end_str,
             "count": 60,              # Get enough data points for the time window
-            "interval": "5m",          # Use 1-minute intervals
+            "interval": "5m",          # Use 5-minute intervals
             "convert": "USD"
         }
 
@@ -441,6 +542,10 @@ def get_coinmarketcap_standard_historical_price(ticker, timestamp):
 
         if response.status_code == 200:
             data = response.json()
+
+            # Log price response
+            logger.info(f"Historical Price API Response for {ticker}: {response.status_code}")
+            logger.info(f"Historical Price API Data: {data}")
 
             if not data.get("data"):
                 logger.warning(f"No historical data found for {ticker}")
