@@ -1,0 +1,7 @@
+tweepy
+requests
+gspread
+oauth2client
+pytest
+pytest-mock
+python-telegram-bot
