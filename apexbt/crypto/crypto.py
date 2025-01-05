@@ -38,18 +38,22 @@ class RateLimiter:
 
 rate_limiter = RateLimiter()
 
-def get_crypto_price_dexscreener(ticker):
+def get_crypto_price_dexscreener(ticker, contract_address=None):
     """
     Get cryptocurrency price data from DexScreener API
 
     Args:
         ticker: Cryptocurrency ticker symbol
+        contract_address: Optional contract address of the token
 
     Returns: Dictionary containing price data or None if not found
     """
     try:
         # DexScreener API endpoint
-        url = f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
+        if contract_address:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{contract_address}"
+        else:
+            url = f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
 
         response = requests.get(url)
 
@@ -58,13 +62,16 @@ def get_crypto_price_dexscreener(ticker):
             pairs = data.get('pairs', [])
 
             if not pairs:
-                logger.warning(f"No pairs found for {ticker} on DexScreener")
+                logger.warning(
+                    f"No pairs found for {'contract ' + contract_address if contract_address else ticker} on DexScreener"
+                )
+                logger.debug(f"API Response: {data}")  # Add debug logging
                 return None
 
             # Sort pairs by liquidity (USD) in descending order
             sorted_pairs = sorted(
                 pairs,
-                key=lambda x: float(x.get('liquidity', {}).get('usd', 0)),
+                key=lambda x: float(x.get('liquidity', {}).get('usd', 0) or 0),  # Handle None values
                 reverse=True
             )
 
@@ -72,16 +79,16 @@ def get_crypto_price_dexscreener(ticker):
             best_pair = sorted_pairs[0]
 
             return {
-                "current_price": float(best_pair.get('priceUsd', 0)),
-                "volume_24h": float(best_pair.get('volume', {}).get('h24', 0)),
-                "liquidity": float(best_pair.get('liquidity', {}).get('usd', 0)),
-                "percent_change_24h": float(best_pair.get('priceChange', {}).get('h24', 0)),
+                "current_price": float(best_pair.get('priceUsd', 0) or 0),
+                "volume_24h": float(best_pair.get('volume', {}).get('h24', 0) or 0),
+                "liquidity": float(best_pair.get('liquidity', {}).get('usd', 0) or 0),
+                "percent_change_24h": float(best_pair.get('priceChange', {}).get('h24', 0) or 0),
                 "dex": best_pair.get('dexId'),
                 "network": best_pair.get('chainId'),
                 "pair_name": f"{best_pair.get('baseToken', {}).get('symbol')}/{best_pair.get('quoteToken', {}).get('symbol')}",
                 "last_updated": best_pair.get('pairCreatedAt'),
-                "contract_address": best_pair.get('pairAddress'),
-                "base_token_address": best_pair.get('baseToken', {}).get('address'),
+                "pair_address": best_pair.get('pairAddress'),
+                "contract_address": best_pair.get('baseToken', {}).get('address'),
             }
 
         else:
@@ -89,7 +96,7 @@ def get_crypto_price_dexscreener(ticker):
             return None
 
     except Exception as e:
-        logger.error(f"Error getting DexScreener price for {ticker}: {str(e)}")
+        logger.error(f"Error getting DexScreener price for {'contract ' + contract_address if contract_address else ticker}: {str(e)}")
         return None
 
 def get_crypto_price(ticker, timestamp=None, include_historical=False):

@@ -17,6 +17,7 @@ class TradePosition:
     entry_price: float
     entry_timestamp: datetime
     ai_agent: str
+    contract_address: str
     status: str = "Open"
 
 class TradeManager:
@@ -36,7 +37,7 @@ class TradeManager:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT ticker, entry_price, timestamp, ai_agent
+                    SELECT ticker, entry_price, timestamp, ai_agent, contract_address
                     FROM trades
                     WHERE status = 'Open'
                 """)
@@ -55,7 +56,9 @@ class TradeManager:
                         ticker=trade['ticker'],
                         entry_price=float(trade['entry_price']),
                         entry_timestamp=entry_timestamp,
-                        ai_agent=trade['ai_agent']
+                        ai_agent=trade['ai_agent'],
+                        contract_address=trade['contract_address'],
+                        status="Open"
                     ))
 
             logger.info(f"Loaded {len(self.active_trades)} active trades")
@@ -138,72 +141,76 @@ class TradeManager:
             raise
 
     def update_trade_prices(self, sheets=None):
-            """Update current prices and PNL in both database and sheets"""
-            try:
-                stats = []
-                agent_totals = {}
-                grand_total = {'invested_amount': 0, 'current_value': 0, 'pnl_dollars': 0}
+        """Update current prices and PNL in both database and sheets"""
+        try:
+            stats = []
+            agent_totals = {}
+            grand_total = {'invested_amount': 0, 'current_value': 0, 'pnl_dollars': 0}
 
-                # Process trades by agent
-                for trade in self.active_trades:
-                    price_data = get_current_price(trade.ticker)
-                    if price_data and price_data.get("current_price"):
-                        current_price = float(price_data["current_price"])
-                        price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
+            # Process trades by agent
+            for trade in self.active_trades:
+                price_data = get_current_price(
+                    trade.ticker,
+                    contract_address=trade.contract_address
+                )
 
-                        invested_amount = 100.0
-                        current_value = invested_amount * (1 + price_change/100)
-                        pnl = current_value - invested_amount
+                if price_data and price_data.get("current_price"):
+                    current_price = float(price_data["current_price"])
+                    price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
 
-                        # Update agent totals
-                        if trade.ai_agent not in agent_totals:
-                            agent_totals[trade.ai_agent] = {
-                                'invested_amount': 0,
-                                'current_value': 0,
-                                'pnl_dollars': 0
-                            }
+                    invested_amount = 100.0
+                    current_value = invested_amount * (1 + price_change/100)
+                    pnl = current_value - invested_amount
 
-                        agent_totals[trade.ai_agent]['invested_amount'] += invested_amount
-                        agent_totals[trade.ai_agent]['current_value'] += current_value
-                        agent_totals[trade.ai_agent]['pnl_dollars'] += pnl
+                    # Update agent totals
+                    if trade.ai_agent not in agent_totals:
+                        agent_totals[trade.ai_agent] = {
+                            'invested_amount': 0,
+                            'current_value': 0,
+                            'pnl_dollars': 0
+                        }
 
-                        # Add trade stats
-                        stats.append({
-                            'type': 'trade',
-                            'ai_agent': trade.ai_agent,
-                            'ticker': trade.ticker,
-                            'entry_time': trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                            'entry_price': trade.entry_price,
-                            'current_price': current_price,
-                            'price_change': f"{price_change:.2f}%",
-                            'invested_amount': invested_amount,
-                            'current_value': current_value,
-                            'pnl_dollars': pnl,
-                            'contract_address': price_data.get('contract_address')
-                        })
+                    agent_totals[trade.ai_agent]['invested_amount'] += invested_amount
+                    agent_totals[trade.ai_agent]['current_value'] += current_value
+                    agent_totals[trade.ai_agent]['pnl_dollars'] += pnl
 
-                # Add agent totals
-                for agent, totals in agent_totals.items():
+                    # Add trade stats
                     stats.append({
-                        'type': 'agent_total',
-                        'agent': agent,
-                        **totals
+                        'type': 'trade',
+                        'ai_agent': trade.ai_agent,
+                        'ticker': trade.ticker,
+                        'entry_time': trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        'entry_price': trade.entry_price,
+                        'current_price': current_price,
+                        'price_change': f"{price_change:.2f}%",
+                        'invested_amount': invested_amount,
+                        'current_value': current_value,
+                        'pnl_dollars': pnl,
+                        'contract_address': trade.contract_address
                     })
-                    grand_total['invested_amount'] += totals['invested_amount']
-                    grand_total['current_value'] += totals['current_value']
-                    grand_total['pnl_dollars'] += totals['pnl_dollars']
 
-                # Add grand total
+            # Add agent totals
+            for agent, totals in agent_totals.items():
                 stats.append({
-                    'type': 'grand_total',
-                    **grand_total
+                    'type': 'agent_total',
+                    'agent': agent,
+                    **totals
                 })
+                grand_total['invested_amount'] += totals['invested_amount']
+                grand_total['current_value'] += totals['current_value']
+                grand_total['pnl_dollars'] += totals['pnl_dollars']
 
-                # Update both database and sheets
-                self.sync_pnl_updates(stats, sheets)
+            # Add grand total
+            stats.append({
+                'type': 'grand_total',
+                **grand_total
+            })
 
-            except Exception as e:
-                logger.error(f"Error updating trade prices: {str(e)}")
+            # Update both database and sheets ONCE after processing all trades
+            self.sync_pnl_updates(stats, sheets)
+
+        except Exception as e:
+            logger.error(f"Error updating trade prices: {str(e)}")
 
     def sync_pnl_updates(self, stats, sheets=None):
         """Sync PNL updates to both database and sheets"""
@@ -286,7 +293,7 @@ class TradeManager:
         return any(trade.ticker.lower() == ticker.lower() and trade.status == "Open"
                   for trade in self.active_trades)
 
-    def add_trade(self, ticker: str, tweet_id: str, entry_price: float, ai_agent: str, entry_timestamp: datetime = None) -> bool:
+    def add_trade(self, ticker: str, contract_address: str, tweet_id: str, entry_price: float, ai_agent: str, entry_timestamp: datetime = None) -> bool:
             """Add a new trade to both database and sheets"""
             if self.has_open_trade(ticker):
                 logger.warning(f"Trade for {ticker} already exists - skipping")
@@ -300,6 +307,7 @@ class TradeManager:
                 "ai_agent": ai_agent,
                 "timestamp": entry_timestamp,
                 "ticker": ticker,
+                "contract_address": contract_address,
                 "entry_price": entry_price,
                 "position_size": 100.0,
                 "direction": "Long",
@@ -322,7 +330,8 @@ class TradeManager:
                     entry_price=entry_price,
                     entry_timestamp=entry_timestamp,
                     status="Open",
-                    ai_agent=ai_agent
+                    ai_agent=ai_agent,
+                    contract_address=contract_address
                 ))
 
             return success
@@ -334,15 +343,16 @@ class TradeManager:
                     cursor = conn.cursor()
                     cursor.execute("""
                         INSERT INTO trades (
-                            trade_id, ai_agent, timestamp, ticker,
+                            trade_id, ai_agent, timestamp, ticker, contract_address,
                             entry_price, position_size, direction, tweet_id,
                             status, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         trade_data["trade_id"],
                         trade_data["ai_agent"],
                         trade_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
                         trade_data["ticker"],
+                        trade_data["contract_address"],
                         trade_data["entry_price"],
                         trade_data["position_size"],
                         trade_data["direction"],
