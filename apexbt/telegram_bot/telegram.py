@@ -1,3 +1,4 @@
+# apexbt/telegram_bot/telegram.py
 import logging
 import asyncio
 from telegram import Bot
@@ -15,7 +16,7 @@ class TelegramManager:
         await self.bot.send_message(
             chat_id=self.chat_id,
             text=message,
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
 
     def send_trade_notification(self, ticker, contract_address, price, ai_agent):
@@ -23,7 +24,7 @@ class TelegramManager:
             message = (
                 f"🚨 New Trade Alert 🚨\n\n"
                 f"Token: ${ticker}\n"
-                f"Contract: `{contract_address}`\n"
+                f"Contract: <code>{contract_address}</code>\n"
                 f"Entry Price: ${price:.8f}\n"
                 f"Signal from: {ai_agent}"
             )
