@@ -96,16 +96,17 @@ def setup_trades_worksheet(sheet):
     """Setup the trades worksheet headers"""
     headers = [
         "Trade ID",
-        "AI Agent",  # New column
+        "AI Agent",
         "Timestamp",
         "Ticker",
+        "Contract Address",
         "Entry Price",
         "Position Size",
-        "Direction",  # Long/Short
+        "Direction",
         "Stop Loss",
         "Take Profit",
         "Tweet ID Reference",
-        "Status",  # Open/Closed
+        "Status",
         "Exit Price",
         "Exit Timestamp",
         "PNL Amount",
@@ -119,7 +120,7 @@ def setup_pnl_worksheet(sheet):
     headers = [
         "AI Agent",
         "Ticker",
-        "Contract Address",  # Added contract address column
+        "Contract Address",
         "Entry Time",
         "Entry Price",
         "Current Price",
@@ -169,6 +170,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
             trade_data.get("ai_agent", ""),
             trade_data.get("timestamp", ""),
             trade_data.get("ticker", ""),
+            trade_data.get("contract_address", ""),
             str(trade_data.get("entry_price", "")),
             str(trade_data.get("position_size", "")),
             trade_data.get("direction", ""),

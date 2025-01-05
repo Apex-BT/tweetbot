@@ -5,6 +5,8 @@ from apexbt.crypto.crypto import get_crypto_price_dexscreener as get_crypto_pric
 from apexbt.trade.trade import TradeManager
 from apexbt.sheets.sheets import setup_google_sheets
 from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
+from apexbt.telegram_bot.telegram import TelegramManager
+from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,9 +41,16 @@ def process_new_tweet(tweet):
 
             if price_data and price_data.get("current_price"):
                 # Add trade to manager
-                if trade_manager.add_trade(ticker, str(tweet.id), float(price_data["current_price"]),
+                if trade_manager.add_trade(ticker, price_data["contract_address"], str(tweet.id), float(price_data["current_price"]),
                                          tweet.author):
                     logger.info(f"Opened new trade for {ticker} at {price_data['current_price']} by {tweet.author}")
+                    # Send Telegram notification
+                    telegram_manager.send_trade_notification(
+                        ticker,
+                        price_data["contract_address"],
+                        float(price_data["current_price"]),
+                        tweet.author
+                    )
 
         # Save tweet to both database and sheets
         save_to_both(tweet, ticker, ticker_status, price_data, tweet.author, sheets)
@@ -61,12 +70,15 @@ def save_to_both(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None
 def main():
     global trade_manager  # Make trade_manager accessible to process_new_tweet
     global sheets
+    global telegram_manager
+
 
     # Initialize components
     init_database()
     twitter_manager = TwitterManager()
     trade_manager = TradeManager()
     sheets = setup_google_sheets()
+    telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
     # Verify Twitter credentials
     if not twitter_manager.verify_credentials():
