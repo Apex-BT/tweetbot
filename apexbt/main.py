@@ -1,6 +1,6 @@
 import logging
 from apexbt.tweet.tweet import TwitterManager
-from apexbt.database.database import init_database, save_tweet, save_trade, is_tweet_processed
+from apexbt.database.database import init_database, save_tweet, is_tweet_processed
 from apexbt.crypto.crypto import get_crypto_price_dexscreener as get_crypto_price
 from apexbt.trade.trade import TradeManager
 from apexbt.sheets.sheets import setup_google_sheets
