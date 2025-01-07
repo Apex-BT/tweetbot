@@ -5,13 +5,16 @@ import logging
 from enum import Enum
 from apexbt.config.config import CODEX_API_KEY
 
+
 class Network(Enum):
     ETHEREUM = 1
     ARBITRUM = 42161
     BASE = 8453
     SOLANA = 1399811149
 
+
 logger = logging.getLogger(__name__)
+
 
 class RateLimiter:
     def __init__(self, requests_per_second: int):
@@ -20,8 +23,9 @@ class RateLimiter:
 
     def wait_if_needed(self):
         current_time = time.time()
-        self.requests_timestamps = [ts for ts in self.requests_timestamps
-                                  if current_time - ts < 1]
+        self.requests_timestamps = [
+            ts for ts in self.requests_timestamps if current_time - ts < 1
+        ]
 
         if len(self.requests_timestamps) >= self.requests_per_second:
             sleep_time = 1 - (current_time - self.requests_timestamps[0])
@@ -30,23 +34,25 @@ class RateLimiter:
 
         self.requests_timestamps.append(current_time)
 
+
 class Codex:
     base_url = "https://graph.codex.io/graphql"
     rate_limiter = RateLimiter(requests_per_second=5)
     session = requests.Session()
-    session.headers.update({
-        "Authorization": CODEX_API_KEY,
-        "Content-Type": "application/json"
-    })
+    session.headers.update(
+        {"Authorization": CODEX_API_KEY, "Content-Type": "application/json"}
+    )
     SUPPORTED_NETWORKS = {
-            "ethereum": Network.ETHEREUM.value,
-            "arbitrum": Network.ARBITRUM.value,
-            "base": Network.BASE.value,
-            "solana": Network.SOLANA.value
-        }
+        "ethereum": Network.ETHEREUM.value,
+        "arbitrum": Network.ARBITRUM.value,
+        "base": Network.BASE.value,
+        "solana": Network.SOLANA.value,
+    }
 
     @staticmethod
-    def get_token_info(contract_address: str, network: str = "ethereum") -> Optional[Dict]:
+    def get_token_info(
+        contract_address: str, network: str = "ethereum"
+    ) -> Optional[Dict]:
         """Get token information using GraphQL"""
         try:
             network_id = Codex.SUPPORTED_NETWORKS.get(network.lower())
@@ -78,17 +84,10 @@ class Codex:
             }
             """
 
-            variables = {
-                "address": contract_address,
-                "networkId": network_id
-            }
+            variables = {"address": contract_address, "networkId": network_id}
 
             response = Codex.session.post(
-                Codex.base_url,
-                json={
-                    "query": query,
-                    "variables": variables
-                }
+                Codex.base_url, json={"query": query, "variables": variables}
             )
 
             if response.status_code == 200:
@@ -98,7 +97,9 @@ class Codex:
                     return None
                 return data.get("data", {}).get("token")
             else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                logger.error(
+                    f"Codex API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
@@ -106,7 +107,9 @@ class Codex:
             return None
 
     @staticmethod
-    def get_token_pairs(contract_address: str, network: str = "ethereum", limit: int = 100) -> Optional[List[Dict]]:
+    def get_token_pairs(
+        contract_address: str, network: str = "ethereum", limit: int = 100
+    ) -> Optional[List[Dict]]:
         """Get pairs for a token using GraphQL and sort by liquidity"""
         try:
             network_id = Codex.SUPPORTED_NETWORKS.get(network.lower())
@@ -132,17 +135,10 @@ class Codex:
             }
             """
 
-            variables = {
-                "tokenAddress": contract_address,
-                "networkId": network_id
-            }
+            variables = {"tokenAddress": contract_address, "networkId": network_id}
 
             response = Codex.session.post(
-                Codex.base_url,
-                json={
-                    "query": query,
-                    "variables": variables
-                }
+                Codex.base_url, json={"query": query, "variables": variables}
             )
 
             if response.status_code == 200:
@@ -152,18 +148,24 @@ class Codex:
                     return None
 
                 # Get results from the correct path in the response
-                pairs = data.get("data", {}).get("listPairsWithMetadataForToken", {}).get("results", [])
+                pairs = (
+                    data.get("data", {})
+                    .get("listPairsWithMetadataForToken", {})
+                    .get("results", [])
+                )
 
                 # Sort pairs by liquidity in descending order
                 sorted_pairs = sorted(
                     pairs,
-                    key=lambda x: float(x.get('liquidity', '0') or '0'),
-                    reverse=True
+                    key=lambda x: float(x.get("liquidity", "0") or "0"),
+                    reverse=True,
                 )
 
                 return sorted_pairs
             else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                logger.error(
+                    f"Codex API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
@@ -171,7 +173,9 @@ class Codex:
             return None
 
     @staticmethod
-    def get_crypto_price(contract_address: str, network: str = "ethereum") -> Optional[Dict]:
+    def get_crypto_price(
+        contract_address: str, network: str = "ethereum"
+    ) -> Optional[Dict]:
         """
         Get cryptocurrency price data using GraphQL
         """
@@ -198,19 +202,12 @@ class Codex:
             """
 
             variables = {
-                "inputs": [{
-                    "address": contract_address,
-                    "networkId": network_id
-                }]
+                "inputs": [{"address": contract_address, "networkId": network_id}]
             }
 
             Codex.rate_limiter.wait_if_needed()
             response = Codex.session.post(
-                Codex.base_url,
-                json={
-                    "query": query,
-                    "variables": variables
-                }
+                Codex.base_url, json={"query": query, "variables": variables}
             )
 
             if response.status_code == 200:
@@ -227,14 +224,16 @@ class Codex:
                 price_data = prices[0]
 
                 return {
-                    "price": float(price_data.get('priceUsd', 0) or 0),
-                    "confidence": price_data.get('confidence'),
-                    "pool_address": price_data.get('poolAddress'),
+                    "price": float(price_data.get("priceUsd", 0) or 0),
+                    "confidence": price_data.get("confidence"),
+                    "pool_address": price_data.get("poolAddress"),
                     "network": network_id,
-                    "contract_address": contract_address
+                    "contract_address": contract_address,
                 }
             else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                logger.error(
+                    f"Codex API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
@@ -242,7 +241,9 @@ class Codex:
             return None
 
     @staticmethod
-    def get_historical_prices(contract_address: str, timestamps: List[int], network: str = "ethereum") -> List[Dict]:
+    def get_historical_prices(
+        contract_address: str, timestamps: List[int], network: str = "ethereum"
+    ) -> List[Dict]:
         """Get historical prices using GraphQL"""
         try:
             network_id = Codex.SUPPORTED_NETWORKS.get(network.lower())
@@ -266,7 +267,7 @@ class Codex:
                     {
                         "address": contract_address,
                         "networkId": network_id,
-                        "timestamp": ts
+                        "timestamp": ts,
                     }
                     for ts in timestamps
                 ]
@@ -274,11 +275,7 @@ class Codex:
 
             Codex.rate_limiter.wait_if_needed()
             response = Codex.session.post(
-                Codex.base_url,
-                json={
-                    "query": query,
-                    "variables": variables
-                }
+                Codex.base_url, json={"query": query, "variables": variables}
             )
 
             if response.status_code == 200:
@@ -295,17 +292,19 @@ class Codex:
 
                 return [
                     {
-                        "timestamp": price.get('timestamp'),
-                        "price": float(price.get('priceUsd', 0) or 0),
-                        "confidence": price.get('confidence'),
-                        "pool_address": price.get('poolAddress'),
+                        "timestamp": price.get("timestamp"),
+                        "price": float(price.get("priceUsd", 0) or 0),
+                        "confidence": price.get("confidence"),
+                        "pool_address": price.get("poolAddress"),
                         "contract_address": contract_address,
-                        "network": network
+                        "network": network,
                     }
                     for price in prices
                 ]
             else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                logger.error(
+                    f"Codex API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:

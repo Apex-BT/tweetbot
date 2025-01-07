@@ -1,7 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from apexbt.database.database import (
-    init_database, save_tweet, is_tweet_processed
-)
+from apexbt.database.database import init_database, save_tweet, is_tweet_processed
 from apexbt.crypto.codex import Codex
 from apexbt.crypto.crypto import get_crypto_price_dexscreener
 from apexbt.trade.trade import TradeManager
@@ -17,14 +15,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def save_to_both_historical(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None):
+def save_to_both_historical(
+    tweet, ticker, ticker_status, price_data, ai_agent, sheets=None
+):
     """Save data to both historical database and historical Google Sheets"""
     # Save to historical database
     save_tweet(tweet, ticker, ticker_status, price_data, ai_agent, historical=True)
 
     # Save to historical Google Sheets if available
-    if sheets and 'tweets' in sheets:
-        save_tweet_to_sheets(sheets['tweets'], tweet, ticker, ticker_status, price_data, ai_agent)
+    if sheets and "tweets" in sheets:
+        save_tweet_to_sheets(
+            sheets["tweets"], tweet, ticker, ticker_status, price_data, ai_agent
+        )
+
 
 def process_tweets(tweets, trade_manager, sheets=None):
     """Process a list of tweets and save to historical database"""
@@ -34,7 +37,9 @@ def process_tweets(tweets, trade_manager, sheets=None):
         try:
             # Check historical database
             if is_tweet_processed(tweet.id, tweet.author, historical=True):
-                logger.info(f"Tweet {tweet.id} from {tweet.author} already processed, skipping...")
+                logger.info(
+                    f"Tweet {tweet.id} from {tweet.author} already processed, skipping..."
+                )
                 continue
 
             ticker, ticker_status = TwitterManager.extract_ticker(tweet.text)
@@ -49,13 +54,17 @@ def process_tweets(tweets, trade_manager, sheets=None):
                 if dex_data:
                     contract_address = dex_data.get("contract_address")
                     network = dex_data.get("network")
-                    logger.info(f"Found contract {contract_address} on network {network} for {ticker}")
+                    logger.info(
+                        f"Found contract {contract_address} on network {network} for {ticker}"
+                    )
 
                     # Convert tweet creation time to Unix timestamp
                     tweet_timestamp = int(tweet.created_at.timestamp())
 
                     # Use contract info to get historical price from Codex
-                    price_data = Codex.get_historical_prices(contract_address, [tweet_timestamp], network)
+                    price_data = Codex.get_historical_prices(
+                        contract_address, [tweet_timestamp], network
+                    )
 
                     if price_data and len(price_data) > 0:
                         historical_price_data = price_data[0]  # Get first price point
@@ -67,25 +76,34 @@ def process_tweets(tweets, trade_manager, sheets=None):
                             float(historical_price_data["price"]),
                             tweet.author,
                             network,
-                            entry_timestamp=tweet.created_at
+                            entry_timestamp=tweet.created_at,
                         ):
-                            logger.info(f"Opened new historical trade for {ticker} at {historical_price_data['price']}")
+                            logger.info(
+                                f"Opened new historical trade for {ticker} at {historical_price_data['price']}"
+                            )
 
                         # Use the historical price data for saving
                         price_data = historical_price_data
                     else:
-                        logger.warning(f"No historical price data found from Codex for {ticker}")
+                        logger.warning(
+                            f"No historical price data found from Codex for {ticker}"
+                        )
                 else:
-                    logger.warning(f"Could not find token info on DexScreener for {ticker}")
+                    logger.warning(
+                        f"Could not find token info on DexScreener for {ticker}"
+                    )
 
             # Save to both historical database and sheets
-            save_to_both_historical(tweet, ticker, ticker_status, price_data, tweet.author, sheets)
+            save_to_both_historical(
+                tweet, ticker, ticker_status, price_data, tweet.author, sheets
+            )
             time.sleep(1)
 
         except Exception as e:
             logger.error(f"Error processing historical tweet: {str(e)}")
             time.sleep(2)
             continue
+
 
 def process_sample_tweets(sheets=None):
     """Process the sample tweets for testing purposes"""
@@ -112,6 +130,7 @@ def process_sample_tweets(sheets=None):
         logger.info("Stopping historical trade manager...")
         trade_manager.stop_monitoring()
 
+
 def run_historical_analysis(start_date=None, sheets=None):
     """Run analysis on historical tweets from multiple users"""
     if start_date is None:
@@ -137,11 +156,18 @@ def run_historical_analysis(start_date=None, sheets=None):
         for i, username in enumerate(TWITTER_USERS, 1):
             try:
                 process_user_historical_tweets(
-                    twitter_manager, trade_manager, username, start_date, i, len(TWITTER_USERS),
-                    sheets
+                    twitter_manager,
+                    trade_manager,
+                    username,
+                    start_date,
+                    i,
+                    len(TWITTER_USERS),
+                    sheets,
                 )
             except Exception as e:
-                logger.error(f"Error processing historical data for @{username}: {str(e)}")
+                logger.error(
+                    f"Error processing historical data for @{username}: {str(e)}"
+                )
                 continue
 
         try:
@@ -153,10 +179,20 @@ def run_historical_analysis(start_date=None, sheets=None):
     else:
         logger.error("Failed to authenticate with Twitter API")
 
-def process_user_historical_tweets(twitter_manager, trade_manager, username, start_date,
-                                 current_user_num, total_users, sheets=None):
+
+def process_user_historical_tweets(
+    twitter_manager,
+    trade_manager,
+    username,
+    start_date,
+    current_user_num,
+    total_users,
+    sheets=None,
+):
     """Process historical tweets for a single user"""
-    logger.info(f"\nProcessing historical data for user {current_user_num}/{total_users}: @{username}")
+    logger.info(
+        f"\nProcessing historical data for user {current_user_num}/{total_users}: @{username}"
+    )
 
     user_tweets = twitter_manager.fetch_historical_tweets(username, start_date)
     if user_tweets:
@@ -168,8 +204,11 @@ def process_user_historical_tweets(twitter_manager, trade_manager, username, sta
 
     if current_user_num < total_users:
         delay = 60
-        logger.info(f"Waiting {delay}s before processing next user's historical data...")
+        logger.info(
+            f"Waiting {delay}s before processing next user's historical data..."
+        )
         time.sleep(delay)
+
 
 if __name__ == "__main__":
     # Initialize Historical Google Sheets

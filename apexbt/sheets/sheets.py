@@ -12,6 +12,7 @@ from config.config import TWITTER_USERS
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class RateLimiter:
     def __init__(self, max_requests_per_minute=60):
         self.max_requests = max_requests_per_minute
@@ -23,7 +24,9 @@ class RateLimiter:
 
         # Cleanup old requests
         if (now - self.last_cleanup) > timedelta(minutes=1):
-            self.requests = [t for t in self.requests if (now - t) < timedelta(minutes=1)]
+            self.requests = [
+                t for t in self.requests if (now - t) < timedelta(minutes=1)
+            ]
             self.last_cleanup = now
 
         # Check if we're at the limit
@@ -32,15 +35,21 @@ class RateLimiter:
             self.requests = [t for t in self.requests if t > oldest_allowed]
 
             if len(self.requests) >= self.max_requests:
-                sleep_time = (self.requests[0] + timedelta(minutes=1) - now).total_seconds()
+                sleep_time = (
+                    self.requests[0] + timedelta(minutes=1) - now
+                ).total_seconds()
                 if sleep_time > 0:
-                    logger.info(f"Rate limit reached, waiting {sleep_time:.1f} seconds...")
+                    logger.info(
+                        f"Rate limit reached, waiting {sleep_time:.1f} seconds..."
+                    )
                     time.sleep(sleep_time)
 
         self.requests.append(now)
 
+
 # Create a global rate limiter instance
 sheet_rate_limiter = RateLimiter(max_requests_per_minute=50)  # Conservative limit
+
 
 def setup_google_sheets(historical=False):
     """Setup Google Sheets connection with multiple worksheets"""
@@ -54,7 +63,9 @@ def setup_google_sheets(historical=False):
     )
 
     client = gspread.authorize(credentials)
-    spreadsheet_name = config.HISTORICAL_SPREADSHEET_NAME if historical else config.SPREADSHEET_NAME
+    spreadsheet_name = (
+        config.HISTORICAL_SPREADSHEET_NAME if historical else config.SPREADSHEET_NAME
+    )
     spreadsheet = client.open(spreadsheet_name)
 
     # Add suffix to worksheet names for historical data
@@ -106,8 +117,9 @@ def setup_google_sheets(historical=False):
         "tweets": tweets_sheet,
         "trades": trades_sheet,
         "pnl": pnl_sheet,
-        "agent_summary": agent_summary_sheet
+        "agent_summary": agent_summary_sheet,
     }
+
 
 def update_worksheet_headers(sheet, headers):
     """Update worksheet headers if they don't match"""
@@ -118,6 +130,7 @@ def update_worksheet_headers(sheet, headers):
             sheet.clear()
         sheet.append_row(headers)
         logger.info(f"Added headers to {sheet.title} sheet")
+
 
 def setup_tweets_worksheet(sheet):
     """Setup the tweets worksheet headers"""
@@ -142,6 +155,7 @@ def setup_tweets_worksheet(sheet):
     ]
     update_worksheet_headers(sheet, headers)
 
+
 def setup_trades_worksheet(sheet):
     """Setup the trades worksheet headers"""
     headers = [
@@ -162,9 +176,10 @@ def setup_trades_worksheet(sheet):
         "Exit Timestamp",
         "PNL Amount",
         "PNL Percentage",
-        "Notes"
+        "Notes",
     ]
     update_worksheet_headers(sheet, headers)
+
 
 def setup_pnl_worksheet(sheet):
     """Setup the PNL worksheet with sections for each AI agent"""
@@ -178,9 +193,10 @@ def setup_pnl_worksheet(sheet):
         "Price Change %",
         "Invested Amount ($)",
         "Current Value ($)",
-        "PNL ($)"
+        "PNL ($)",
     ]
     update_worksheet_headers(sheet, headers)
+
 
 def setup_agent_summary_worksheet(sheet):
     """Setup the agent summary worksheet headers"""
@@ -191,17 +207,16 @@ def setup_agent_summary_worksheet(sheet):
         "Qualified Tweets",
         "Cumulative PNL ($)",
         "Win Rate (%)",
-        "Last Updated"
+        "Last Updated",
     ]
     update_worksheet_headers(sheet, headers)
 
+
 def setup_summary_worksheet(sheet):
     """Setup the summary worksheet headers"""
-    headers = [
-        "Metric",
-        "Value"
-    ]
+    headers = ["Metric", "Value"]
     update_worksheet_headers(sheet, headers)
+
 
 def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):
     try:
@@ -226,7 +241,7 @@ def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):
             price_data.get("network", "N/A"),
             price_data.get("pair_name", "N/A"),
             price_data.get("contract_address", "N/A"),
-            price_data.get("last_updated", "N/A")
+            price_data.get("last_updated", "N/A"),
         ]
 
         sheet.append_row(row)
@@ -235,13 +250,16 @@ def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):
     except Exception as e:
         logger.error(f"Error saving to Google Sheets: {str(e)}")
 
+
 def save_trade(sheet, trade_data, pnl_sheet):
     """Save trade information to the Trades worksheet and update PNL"""
     try:
         sheet_rate_limiter.wait_if_needed()
 
         if "timestamp" in trade_data:
-            trade_data["timestamp"] = trade_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            trade_data["timestamp"] = trade_data["timestamp"].strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
         row = [
             trade_data.get("trade_id", ""),
@@ -261,13 +279,14 @@ def save_trade(sheet, trade_data, pnl_sheet):
             str(trade_data.get("exit_timestamp", "")),
             str(trade_data.get("pnl_amount", "")),
             str(trade_data.get("pnl_percentage", "")),
-            trade_data.get("notes", "")
+            trade_data.get("notes", ""),
         ]
 
         sheet.append_row(row)
         logger.info(f"Trade saved to Google Sheets: {trade_data.get('trade_id')}")
     except Exception as e:
         logger.error(f"Error saving trade to Google Sheets: {str(e)}")
+
 
 def get_sheet_access():
     scope = [
@@ -288,6 +307,7 @@ def get_sheet_access():
 
     print(f"Access granted! Open the spreadsheet at:")
     print(f"https://docs.google.com/spreadsheets/d/{spreadsheet.id}")
+
 
 def setup_new_sheet():
     # Setup credentials
@@ -313,6 +333,7 @@ def setup_new_sheet():
     print(f"Created new spreadsheet: {sh.url}")
     print("Please share this spreadsheet with your Google account email")
 
+
 def update_pnl_sheet(sheet, stats):
     """Update PNL worksheet with current statistics"""
     try:
@@ -321,93 +342,105 @@ def update_pnl_sheet(sheet, stats):
 
         # Clear existing data but keep headers
         sheet.clear()
-        sheet.append_row([
-            "AI Agent",
-            "Ticker",
-            "Contract Address",
-            "Entry Time",
-            "Entry Price",
-            "Current Price",
-            "Price Change %",
-            "Invested Amount ($)",
-            "Current Value ($)",
-            "PNL ($)"
-        ])
+        sheet.append_row(
+            [
+                "AI Agent",
+                "Ticker",
+                "Contract Address",
+                "Entry Time",
+                "Entry Price",
+                "Current Price",
+                "Price Change %",
+                "Invested Amount ($)",
+                "Current Value ($)",
+                "PNL ($)",
+            ]
+        )
 
         # Group trades by AI agent and calculate totals
         agent_trades = {}
-        portfolio_total = {
-            'invested_amount': 0,
-            'current_value': 0,
-            'pnl_dollars': 0
-        }
+        portfolio_total = {"invested_amount": 0, "current_value": 0, "pnl_dollars": 0}
 
         # Process stats and build rows
         rows_to_append = []
 
         for stat in stats:
-            if stat['type'] == 'trade':
-                agent = stat['ai_agent']
+            if stat["type"] == "trade":
+                agent = stat["ai_agent"]
                 if agent not in agent_trades:
                     agent_trades[agent] = {
-                        'trades': [],
-                        'invested_amount': 0,
-                        'current_value': 0,
-                        'pnl_dollars': 0
+                        "trades": [],
+                        "invested_amount": 0,
+                        "current_value": 0,
+                        "pnl_dollars": 0,
                     }
 
-                agent_trades[agent]['trades'].append(stat)
-                agent_trades[agent]['invested_amount'] += stat['invested_amount']
-                agent_trades[agent]['current_value'] += stat['current_value']
-                agent_trades[agent]['pnl_dollars'] += stat['pnl_dollars']
+                agent_trades[agent]["trades"].append(stat)
+                agent_trades[agent]["invested_amount"] += stat["invested_amount"]
+                agent_trades[agent]["current_value"] += stat["current_value"]
+                agent_trades[agent]["pnl_dollars"] += stat["pnl_dollars"]
 
                 # Add to portfolio totals
-                portfolio_total['invested_amount'] += stat['invested_amount']
-                portfolio_total['current_value'] += stat['current_value']
-                portfolio_total['pnl_dollars'] += stat['pnl_dollars']
+                portfolio_total["invested_amount"] += stat["invested_amount"]
+                portfolio_total["current_value"] += stat["current_value"]
+                portfolio_total["pnl_dollars"] += stat["pnl_dollars"]
 
         # Write trades grouped by agent with totals
         for agent, data in agent_trades.items():
             # Write individual trades
-            for trade in data['trades']:
+            for trade in data["trades"]:
                 row = [
-                    trade['ai_agent'],
-                    trade['ticker'],
-                    trade.get('contract_address', 'N/A'),
-                    trade['entry_time'],
+                    trade["ai_agent"],
+                    trade["ticker"],
+                    trade.get("contract_address", "N/A"),
+                    trade["entry_time"],
                     f"${trade['entry_price']:.8f}",
                     f"${trade['current_price']:.8f}",
-                    trade['price_change'],
+                    trade["price_change"],
                     f"${trade['invested_amount']:.2f}",
                     f"${trade['current_value']:.2f}",
-                    f"${trade['pnl_dollars']:.2f}"
+                    f"${trade['pnl_dollars']:.2f}",
                 ]
                 rows_to_append.append(row)
 
             # Write agent totals
             rows_to_append.append([])  # Empty row
-            rows_to_append.append([
-                f"{agent} Totals",
-                "", "", "", "", "", "",
-                f"${data['invested_amount']:.2f}",
-                f"${data['current_value']:.2f}",
-                f"${data['pnl_dollars']:.2f}"
-            ])
+            rows_to_append.append(
+                [
+                    f"{agent} Totals",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    f"${data['invested_amount']:.2f}",
+                    f"${data['current_value']:.2f}",
+                    f"${data['pnl_dollars']:.2f}",
+                ]
+            )
             rows_to_append.append([])  # Empty row
 
         # Write portfolio totals
-        rows_to_append.append([
-            "Portfolio Totals",
-            "", "", "", "", "", "",
-            f"${portfolio_total['invested_amount']:.2f}",
-            f"${portfolio_total['current_value']:.2f}",
-            f"${portfolio_total['pnl_dollars']:.2f}"
-        ])
+        rows_to_append.append(
+            [
+                "Portfolio Totals",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                f"${portfolio_total['invested_amount']:.2f}",
+                f"${portfolio_total['current_value']:.2f}",
+                f"${portfolio_total['pnl_dollars']:.2f}",
+            ]
+        )
 
         # Batch append rows with rate limiting
         batch_size = 20
         for i in range(0, len(rows_to_append), batch_size):
-            batch = rows_to_append[i:i + batch_size]
+            batch = rows_to_append[i : i + batch_size]
             sheet_rate_limiter.wait_if_needed()
             sheet.append_rows(batch)
 
@@ -415,6 +448,7 @@ def update_pnl_sheet(sheet, stats):
 
     except Exception as e:
         logger.error(f"Error updating PNL sheet: {str(e)}")
+
 
 def update_summary_sheet(sheet, agent_stats, pnl_sheet):
     """Update the summary sheet with overall statistics"""
@@ -450,8 +484,8 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
         total_current_value = 0
         total_pnl = 0
         agent_totals = {}
-        largest_gain = float('-inf')
-        largest_loss = float('inf')
+        largest_gain = float("-inf")
+        largest_loss = float("inf")
         largest_gain_ticker = "N/A"
         largest_loss_ticker = "N/A"
         largest_gain_agent = "N/A"
@@ -468,26 +502,36 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
             if not row or len(row) <= pnl_amount_idx:
                 continue
 
-            if 'Portfolio Totals' in row[agent_idx]:
+            if "Portfolio Totals" in row[agent_idx]:
                 portfolio_totals_found = True
                 try:
-                    total_invested = float(row[invested_amount_idx].strip('$').replace(',', ''))
-                    total_current_value = float(row[current_value_idx].strip('$').replace(',', ''))
-                    total_pnl = float(row[pnl_amount_idx].strip('$').replace(',', ''))
+                    total_invested = float(
+                        row[invested_amount_idx].strip("$").replace(",", "")
+                    )
+                    total_current_value = float(
+                        row[current_value_idx].strip("$").replace(",", "")
+                    )
+                    total_pnl = float(row[pnl_amount_idx].strip("$").replace(",", ""))
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Error processing portfolio totals: {e}")
-            elif 'Totals' in row[agent_idx] and current_agent:
+            elif "Totals" in row[agent_idx] and current_agent:
                 try:
-                    invested = float(row[invested_amount_idx].strip('$').replace(',', ''))
-                    current_val = float(row[current_value_idx].strip('$').replace(',', ''))
-                    pnl = float(row[pnl_amount_idx].strip('$').replace(',', ''))
+                    invested = float(
+                        row[invested_amount_idx].strip("$").replace(",", "")
+                    )
+                    current_val = float(
+                        row[current_value_idx].strip("$").replace(",", "")
+                    )
+                    pnl = float(row[pnl_amount_idx].strip("$").replace(",", ""))
                     agent_totals[current_agent] = {
-                        'invested': invested,
-                        'current_value': current_val,
-                        'pnl': pnl
+                        "invested": invested,
+                        "current_value": current_val,
+                        "pnl": pnl,
                     }
                 except (ValueError, IndexError) as e:
-                    logger.warning(f"Error processing agent totals for {current_agent}: {e}")
+                    logger.warning(
+                        f"Error processing agent totals for {current_agent}: {e}"
+                    )
             else:
                 agent = row[agent_idx]
                 if agent:  # Only process if agent name exists
@@ -498,7 +542,7 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
                         total_trades[agent] = 0
 
                     try:
-                        price_change_str = row[price_change_idx].strip('%').strip()
+                        price_change_str = row[price_change_idx].strip("%").strip()
                         if price_change_str:
                             price_change = float(price_change_str)
                             total_trades[agent] += 1
@@ -540,19 +584,27 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
         # Calculate total trades and winning trades
         total_trades_count = sum(total_trades.values())
         total_winning_trades = sum(winning_trades.values())
-        cumulative_win_rate = (total_winning_trades / total_trades_count * 100) if total_trades_count > 0 else 0
+        cumulative_win_rate = (
+            (total_winning_trades / total_trades_count * 100)
+            if total_trades_count > 0
+            else 0
+        )
 
         # Find best and worst performing agents
         best_agent = "N/A"
         worst_agent = "N/A"
         if agent_totals:
-            best_agent = max(agent_totals.items(), key=lambda x: x[1]['pnl'])[0]
-            worst_agent = min(agent_totals.items(), key=lambda x: x[1]['pnl'])[0]
+            best_agent = max(agent_totals.items(), key=lambda x: x[1]["pnl"])[0]
+            worst_agent = min(agent_totals.items(), key=lambda x: x[1]["pnl"])[0]
 
         # Calculate total tweets from agent_stats
         total_tweets = sum(stats["total_tweets"] for stats in agent_stats.values())
-        total_single_ticker = sum(stats["single_ticker_tweets"] for stats in agent_stats.values())
-        total_qualified = sum(stats["qualified_tweets"] for stats in agent_stats.values())
+        total_single_ticker = sum(
+            stats["single_ticker_tweets"] for stats in agent_stats.values()
+        )
+        total_qualified = sum(
+            stats["qualified_tweets"] for stats in agent_stats.values()
+        )
 
         # Calculate PNL percentage
         pnl_percentage = (total_pnl / total_invested * 100) if total_invested > 0 else 0
@@ -571,11 +623,33 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
             ["Cumulative Win Rate", f"{cumulative_win_rate:.1f}%"],
             ["Highest Win Rate", f"{highest_win_rate:.1f}% ({highest_win_rate_agent})"],
             ["Lowest Win Rate", f"{lowest_win_rate:.1f}% ({lowest_win_rate_agent})"],
-            ["Largest Gainer", f"{largest_gain_ticker}: {largest_gain:.1f}% ({largest_gain_agent})"],
-            ["Largest Loser", f"{largest_loss_ticker}: {largest_loss:.1f}% ({largest_loss_agent})"],
-            ["Best Performing Agent", f"{best_agent}" + (f" (${agent_totals[best_agent]['pnl']:,.2f})" if best_agent != "N/A" else "")],
-            ["Worst Performing Agent", f"{worst_agent}" + (f" (${agent_totals[worst_agent]['pnl']:,.2f})" if worst_agent != "N/A" else "")],
-            ["Last Updated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+            [
+                "Largest Gainer",
+                f"{largest_gain_ticker}: {largest_gain:.1f}% ({largest_gain_agent})",
+            ],
+            [
+                "Largest Loser",
+                f"{largest_loss_ticker}: {largest_loss:.1f}% ({largest_loss_agent})",
+            ],
+            [
+                "Best Performing Agent",
+                f"{best_agent}"
+                + (
+                    f" (${agent_totals[best_agent]['pnl']:,.2f})"
+                    if best_agent != "N/A"
+                    else ""
+                ),
+            ],
+            [
+                "Worst Performing Agent",
+                f"{worst_agent}"
+                + (
+                    f" (${agent_totals[worst_agent]['pnl']:,.2f})"
+                    if worst_agent != "N/A"
+                    else ""
+                ),
+            ],
+            ["Last Updated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
         ]
 
         # Update sheet
@@ -586,6 +660,7 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
         logger.error(f"Error updating summary sheet: {str(e)}")
         logger.exception("Full traceback:")
         raise
+
 
 def update_agent_summary(sheet, stats):
     """Update agent summary worksheet"""
@@ -606,7 +681,7 @@ def update_agent_summary(sheet, stats):
                 "qualified_tweets": 0,
                 "cumulative_pnl": 0.0,
                 "winning_trades": 0,
-                "total_trades": 0
+                "total_trades": 0,
             }
 
         spreadsheet = sheet.spreadsheet
@@ -631,7 +706,7 @@ def update_agent_summary(sheet, stats):
                 continue
 
             # Skip totals rows or empty agent rows
-            if not row[pnl_agent_idx] or 'Totals' in row[pnl_agent_idx]:
+            if not row[pnl_agent_idx] or "Totals" in row[pnl_agent_idx]:
                 continue
 
             agent = row[pnl_agent_idx]
@@ -648,7 +723,7 @@ def update_agent_summary(sheet, stats):
 
             try:
                 # Get PNL value
-                pnl_str = row[pnl_amount_idx].strip('$').strip()
+                pnl_str = row[pnl_amount_idx].strip("$").strip()
                 if pnl_str:  # Only process if PNL value exists
                     pnl = float(pnl_str)
 
@@ -661,11 +736,15 @@ def update_agent_summary(sheet, stats):
                         agent_stats[agent]["winning_trades"] += 1
 
             except ValueError as e:
-                logger.warning(f"Skipping row - Invalid PNL value for {agent}, contract {contract}")
+                logger.warning(
+                    f"Skipping row - Invalid PNL value for {agent}, contract {contract}"
+                )
                 continue
 
         # Process tweet statistics
-        tweets_sheet = spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Tweets"))
+        tweets_sheet = spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Tweets")
+        )
         values = tweets_sheet.get_all_values()
         headers = values[0]
 
@@ -689,9 +768,12 @@ def update_agent_summary(sheet, stats):
 
                 # Check if this tweet's contract is in agent's trades
                 contract = row[contract_addr_idx]
-                if (contract and contract != "N/A" and
-                    agent in agent_trades and
-                    contract in agent_trades[agent]):
+                if (
+                    contract
+                    and contract != "N/A"
+                    and agent in agent_trades
+                    and contract in agent_trades[agent]
+                ):
                     agent_stats[agent]["qualified_tweets"] += 1
 
         # Prepare rows for updating
@@ -699,18 +781,21 @@ def update_agent_summary(sheet, stats):
         for agent, stats in agent_stats.items():
             win_rate = (
                 (stats["winning_trades"] / stats["total_trades"] * 100)
-                if stats["total_trades"] > 0 else 0
+                if stats["total_trades"] > 0
+                else 0
             )
 
-            rows_to_update.append([
-                agent,
-                stats["total_tweets"],
-                stats["single_ticker_tweets"],
-                stats["qualified_tweets"],
-                f"${stats['cumulative_pnl']:.2f}",
-                f"{win_rate:.1f}%",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            ])
+            rows_to_update.append(
+                [
+                    agent,
+                    stats["total_tweets"],
+                    stats["single_ticker_tweets"],
+                    stats["qualified_tweets"],
+                    f"${stats['cumulative_pnl']:.2f}",
+                    f"{win_rate:.1f}%",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ]
+            )
 
         # Update sheet
         if rows_to_update:
@@ -718,14 +803,19 @@ def update_agent_summary(sheet, stats):
             logger.info("Agent summary updated successfully")
 
         # Update summary sheet
-        summary_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Summary"))
-        pnl_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "PNL"))
+        summary_sheet = sheet.spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Summary")
+        )
+        pnl_sheet = sheet.spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "PNL")
+        )
         update_summary_sheet(summary_sheet, agent_stats, pnl_sheet)
 
     except Exception as e:
         logger.error(f"Error updating agent summary: {str(e)}")
         logger.exception("Full traceback:")
         raise
+
 
 def get_latest_tweet_id_by_agent(sheet, ai_agent: str) -> str:
     """Get the ID of the latest processed tweet for a specific AI agent"""
@@ -752,6 +842,7 @@ def get_latest_tweet_id_by_agent(sheet, ai_agent: str) -> str:
         logger.error(f"Error getting latest tweet ID for {ai_agent}: {str(e)}")
     return None
 
+
 def is_tweet_processed(sheet, tweet_id: str, ai_agent: str) -> bool:
     """Check if a specific tweet from an AI agent has already been processed"""
     try:
@@ -764,8 +855,7 @@ def is_tweet_processed(sheet, tweet_id: str, ai_agent: str) -> bool:
         ai_agent_index = headers.index("AI Agent")
 
         for row in values[1:]:
-            if (row[tweet_id_index] == str(tweet_id) and
-                row[ai_agent_index] == ai_agent):
+            if row[tweet_id_index] == str(tweet_id) and row[ai_agent_index] == ai_agent:
                 return True
 
         return False
@@ -773,6 +863,7 @@ def is_tweet_processed(sheet, tweet_id: str, ai_agent: str) -> bool:
     except Exception as e:
         logger.error(f"Error checking processed tweet: {str(e)}")
         return False
+
 
 if __name__ == "__main__":
     import sys
@@ -789,7 +880,11 @@ if __name__ == "__main__":
 
         # Authorize and create new spreadsheet
         gc = gspread.authorize(credentials)
-        spreadsheet_name = config.HISTORICAL_SPREADSHEET_NAME if historical else config.SPREADSHEET_NAME
+        spreadsheet_name = (
+            config.HISTORICAL_SPREADSHEET_NAME
+            if historical
+            else config.SPREADSHEET_NAME
+        )
         sh = gc.create(spreadsheet_name)
 
         # Initialize worksheets with proper setup
