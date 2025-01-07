@@ -88,6 +88,19 @@ def init_database(historical=False):
         )
         ''')
 
+        # Create agent summary table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS agent_summary (
+            agent TEXT PRIMARY KEY,
+            total_tweets INTEGER,
+            single_ticker_tweets INTEGER,
+            qualified_tweets INTEGER,
+            cumulative_pnl REAL,
+            win_rate REAL,
+            last_updated TIMESTAMP
+        )
+        ''')
+
         conn.commit()
 
 def save_tweet(tweet, ticker, ticker_status, price_data, ai_agent, historical=False):
@@ -222,6 +235,33 @@ def update_pnl_table(stats, historical=False):
     except Exception as e:
         logger.error(f"Error updating PNL table: {str(e)}")
         raise
+
+def update_agent_summary_stats(agent_stats, historical=False):
+    """Update agent summary statistics in database"""
+    try:
+        with get_db_connection(historical) as conn:
+            cursor = conn.cursor()
+
+            for agent, stats in agent_stats.items():
+                cursor.execute("""
+                    INSERT OR REPLACE INTO agent_summary (
+                        agent, total_tweets, single_ticker_tweets,
+                        qualified_tweets, cumulative_pnl, win_rate, last_updated
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    agent,
+                    stats["total_tweets"],
+                    stats["single_ticker_tweets"],
+                    stats["qualified_tweets"],
+                    stats["cumulative_pnl"],
+                    stats["win_rate"],
+                    datetime.now()
+                ))
+
+            conn.commit()
+
+    except Exception as e:
+        logger.error(f"Error updating agent summary stats: {str(e)}")
 
 def save_trade(trade_data, historical=False):
     """Save new trade to database"""

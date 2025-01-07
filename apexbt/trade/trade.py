@@ -144,6 +144,11 @@ class TradeManager:
             # Update both database and sheets ONCE after processing all trades
             self.sync_pnl_updates(stats, sheets)
 
+            # Update agent summary if sheets available
+            if sheets and 'agent_summary' in sheets:
+                from apexbt.sheets.sheets import update_agent_summary
+                update_agent_summary(sheets['agent_summary'], stats)
+
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
 

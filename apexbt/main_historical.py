@@ -10,18 +10,12 @@ from apexbt.utils.sample_tweets import sample_tweets
 from apexbt.sheets.sheets import setup_google_sheets, save_tweet as save_tweet_to_sheets
 import time
 import logging
+from config.config import TWITTER_USERS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TWITTER_USERS = [
-    "Vader_AI_",
-    "freysa_ai",
-    "aixbt_agent",
-    "tri_sigma_",
-    "gekko_agent"
-]
 
 def save_to_both_historical(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None):
     """Save data to both historical database and historical Google Sheets"""
