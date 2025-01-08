@@ -41,61 +41,61 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-def get_crypto_price_dexscreener(ticker, contract_address=None):
+def get_crypto_price_dexscreener(ticker):
     """
     Get cryptocurrency price data from DexScreener API
 
     Args:
         ticker: Cryptocurrency ticker symbol
-        contract_address: Optional contract address of the token
 
     Returns: Dictionary containing price data or None if not found
     """
     try:
-        # DexScreener API endpoint
-        if contract_address:
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{contract_address}"
-        else:
-            url = f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
-
+        url = f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
         response = requests.get(url)
 
         if response.status_code == 200:
             data = response.json()
-            pairs = data.get("pairs", [])
+            pairs = data.get('pairs', [])
 
             if not pairs:
-                logger.warning(
-                    f"No pairs found for {'contract ' + contract_address if contract_address else ticker} on DexScreener"
-                )
-                logger.debug(f"API Response: {data}")  # Add debug logging
+                logger.warning(f"No pairs found for {ticker} on DexScreener")
                 return None
 
-            # Sort pairs by liquidity (USD) in descending order
+            # Filter pairs to ensure base token symbol matches ticker
+            matching_pairs = [
+                pair for pair in pairs
+                if pair.get('baseToken', {}).get('symbol', '').upper() == ticker.upper()
+            ]
+
+            if not matching_pairs:
+                logger.warning(f"No pairs found with matching ticker {ticker} on DexScreener")
+                return None
+
+            # Sort matching pairs by both liquidity and volume
             sorted_pairs = sorted(
-                pairs,
-                key=lambda x: float(
-                    x.get("liquidity", {}).get("usd", 0) or 0
-                ),  # Handle None values
-                reverse=True,
+                matching_pairs,
+                key=lambda x: (
+                    float(x.get('volume', {}).get('h24', 0) or 0),  # Prioritize volume
+                    float(x.get('liquidity', {}).get('usd', 0) or 0)  # Then liquidity
+                ),
+                reverse=True
             )
 
-            # Get the pair with highest liquidity
+            # Get the pair with highest liquidity and volume
             best_pair = sorted_pairs[0]
 
             return {
-                "current_price": float(best_pair.get("priceUsd", 0) or 0),
-                "volume_24h": float(best_pair.get("volume", {}).get("h24", 0) or 0),
-                "liquidity": float(best_pair.get("liquidity", {}).get("usd", 0) or 0),
-                "percent_change_24h": float(
-                    best_pair.get("priceChange", {}).get("h24", 0) or 0
-                ),
-                "dex": best_pair.get("dexId"),
-                "network": best_pair.get("chainId"),
+                "current_price": float(best_pair.get('priceUsd', 0) or 0),
+                "volume_24h": float(best_pair.get('volume', {}).get('h24', 0) or 0),
+                "liquidity": float(best_pair.get('liquidity', {}).get('usd', 0) or 0),
+                "percent_change_24h": float(best_pair.get('priceChange', {}).get('h24', 0) or 0),
+                "dex": best_pair.get('dexId'),
+                "network": best_pair.get('chainId'),
                 "pair_name": f"{best_pair.get('baseToken', {}).get('symbol')}/{best_pair.get('quoteToken', {}).get('symbol')}",
-                "last_updated": best_pair.get("pairCreatedAt"),
-                "pair_address": best_pair.get("pairAddress"),
-                "contract_address": best_pair.get("baseToken", {}).get("address"),
+                "last_updated": best_pair.get('pairCreatedAt'),
+                "pair_address": best_pair.get('pairAddress'),
+                "contract_address": best_pair.get('baseToken', {}).get('address'),
             }
 
         else:
@@ -106,7 +106,7 @@ def get_crypto_price_dexscreener(ticker, contract_address=None):
 
     except Exception as e:
         logger.error(
-            f"Error getting DexScreener price for {'contract ' + contract_address if contract_address else ticker}: {str(e)}"
+            f"Error getting DexScreener price for {ticker}: {str(e)}"
         )
         return None
 

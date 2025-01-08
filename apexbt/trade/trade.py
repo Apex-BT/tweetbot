@@ -24,7 +24,7 @@ class TradePosition:
 
 
 class TradeManager:
-    def __init__(self, update_interval=60, historical=False):
+    def __init__(self, update_interval=300, historical=False):
         self.update_interval = update_interval
         self.historical = historical
         self.active_trades: List[TradePosition] = []

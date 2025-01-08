@@ -335,120 +335,125 @@ def setup_new_sheet():
 
 
 def update_pnl_sheet(sheet, stats):
-    """Update PNL worksheet with current statistics"""
+    """Update PNL worksheet with current statistics using batch processing"""
     try:
-        # Rate limit check
         sheet_rate_limiter.wait_if_needed()
 
-        # Clear existing data but keep headers
+        # Clear and reset headers
         sheet.clear()
-        sheet.append_row(
-            [
-                "AI Agent",
-                "Ticker",
-                "Contract Address",
-                "Entry Time",
-                "Entry Price",
-                "Current Price",
-                "Price Change %",
-                "Invested Amount ($)",
-                "Current Value ($)",
-                "PNL ($)",
-            ]
-        )
+        headers = [
+            "AI Agent", "Ticker", "Contract Address", "Entry Time",
+            "Entry Price", "Current Price", "Price Change %",
+            "Invested Amount ($)", "Current Value ($)", "PNL ($)"
+        ]
+        sheet.append_row(headers)
 
-        # Group trades by AI agent and calculate totals
+        # Group trades by AI agent
         agent_trades = {}
-        portfolio_total = {"invested_amount": 0, "current_value": 0, "pnl_dollars": 0}
-
-        # Process stats and build rows
-        rows_to_append = []
-
         for stat in stats:
             if stat["type"] == "trade":
                 agent = stat["ai_agent"]
                 if agent not in agent_trades:
-                    agent_trades[agent] = {
-                        "trades": [],
-                        "invested_amount": 0,
-                        "current_value": 0,
-                        "pnl_dollars": 0,
-                    }
+                    agent_trades[agent] = []
+                agent_trades[agent].append(stat)
 
-                agent_trades[agent]["trades"].append(stat)
-                agent_trades[agent]["invested_amount"] += stat["invested_amount"]
-                agent_trades[agent]["current_value"] += stat["current_value"]
-                agent_trades[agent]["pnl_dollars"] += stat["pnl_dollars"]
+        # Prepare all rows for batch processing
+        all_rows = []
 
-                # Add to portfolio totals
-                portfolio_total["invested_amount"] += stat["invested_amount"]
-                portfolio_total["current_value"] += stat["current_value"]
-                portfolio_total["pnl_dollars"] += stat["pnl_dollars"]
+        # Process each agent's trades in order
+        for agent in sorted(agent_trades.keys()):
+            # Sort trades by entry time
+            agent_trades[agent].sort(key=lambda x: x["entry_time"])
 
-        # Write trades grouped by agent with totals
-        for agent, data in agent_trades.items():
-            # Write individual trades
-            for trade in data["trades"]:
+            # Prepare trade rows for this agent
+            for trade in agent_trades[agent]:
+                # Convert string values to float where needed
+                try:
+                    entry_price = float(str(trade['entry_price']).replace('$', '').replace(',', ''))
+                    current_price = float(str(trade['current_price']).replace('$', '').replace(',', ''))
+                    price_change = float(str(trade['price_change']).replace('%', '').replace(',', ''))
+                    invested_amount = float(str(trade['invested_amount']).replace('$', '').replace(',', ''))
+                    current_value = float(str(trade['current_value']).replace('$', '').replace(',', ''))
+                    pnl_dollars = float(str(trade['pnl_dollars']).replace('$', '').replace(',', ''))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error converting values for trade: {trade}. Error: {e}")
+                    continue
+
                 row = [
-                    trade["ai_agent"],
+                    agent,
                     trade["ticker"],
                     trade.get("contract_address", "N/A"),
                     trade["entry_time"],
-                    f"${trade['entry_price']:.8f}",
-                    f"${trade['current_price']:.8f}",
-                    trade["price_change"],
-                    f"${trade['invested_amount']:.2f}",
-                    f"${trade['current_value']:.2f}",
-                    f"${trade['pnl_dollars']:.2f}",
+                    f"${entry_price:.8f}",
+                    f"${current_price:.8f}",
+                    f"{price_change:.2f}%",
+                    f"${invested_amount:.2f}",
+                    f"${current_value:.2f}",
+                    f"${pnl_dollars:.2f}"
                 ]
-                rows_to_append.append(row)
+                all_rows.append(row)
 
-            # Write agent totals
-            rows_to_append.append([])  # Empty row
-            rows_to_append.append(
-                [
-                    f"{agent} Totals",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    f"${data['invested_amount']:.2f}",
-                    f"${data['current_value']:.2f}",
-                    f"${data['pnl_dollars']:.2f}",
-                ]
-            )
-            rows_to_append.append([])  # Empty row
+            # Calculate agent totals
+            agent_trades_list = agent_trades[agent]
+            total_invested = sum(float(str(t['invested_amount']).replace('$', '').replace(',', ''))
+                               for t in agent_trades_list)
+            total_current = sum(float(str(t['current_value']).replace('$', '').replace(',', ''))
+                              for t in agent_trades_list)
+            total_pnl = sum(float(str(t['pnl_dollars']).replace('$', '').replace(',', ''))
+                          for t in agent_trades_list)
 
-        # Write portfolio totals
-        rows_to_append.append(
-            [
-                "Portfolio Totals",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                f"${portfolio_total['invested_amount']:.2f}",
-                f"${portfolio_total['current_value']:.2f}",
-                f"${portfolio_total['pnl_dollars']:.2f}",
-            ]
+            # Add empty row + totals row + empty row for separation
+            all_rows.append([""] * len(headers))
+            all_rows.append([
+                f"{agent} Totals", "", "", "",
+                "", "", "",
+                f"${total_invested:.2f}",
+                f"${total_current:.2f}",
+                f"${total_pnl:.2f}"
+            ])
+            all_rows.append([""] * len(headers))
+
+        # Add portfolio totals at the end
+        portfolio_invested = sum(
+            sum(float(str(t['invested_amount']).replace('$', '').replace(',', ''))
+                for t in trades)
+            for trades in agent_trades.values()
+        )
+        portfolio_current = sum(
+            sum(float(str(t['current_value']).replace('$', '').replace(',', ''))
+                for t in trades)
+            for trades in agent_trades.values()
+        )
+        portfolio_pnl = sum(
+            sum(float(str(t['pnl_dollars']).replace('$', '').replace(',', ''))
+                for t in trades)
+            for trades in agent_trades.values()
         )
 
-        # Batch append rows with rate limiting
-        batch_size = 20
-        for i in range(0, len(rows_to_append), batch_size):
-            batch = rows_to_append[i : i + batch_size]
+
+        # Ensure the Portfolio totals row has the same number of columns as headers
+        portfolio_totals_row = [
+            "Portfolio Totals", "", "", "",
+            "", "", "",
+            f"${portfolio_invested:.2f}",
+            f"${portfolio_current:.2f}",
+            f"${portfolio_pnl:.2f}"
+        ]
+        all_rows.append(portfolio_totals_row)
+
+        # Process rows in batches
+        batch_size = 20  # Adjust this based on your rate limits
+        for i in range(0, len(all_rows), batch_size):
+            batch = all_rows[i:i + batch_size]
             sheet_rate_limiter.wait_if_needed()
             sheet.append_rows(batch)
 
-        logger.info("PNL data updated in Google Sheets")
+        logger.info("PNL sheet updated successfully")
 
     except Exception as e:
         logger.error(f"Error updating PNL sheet: {str(e)}")
-
+        logger.exception("Full traceback:")
+        raise
 
 def update_summary_sheet(sheet, agent_stats, pnl_sheet):
     """Update the summary sheet with overall statistics"""
@@ -491,75 +496,76 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
         largest_gain_agent = "N/A"
         largest_loss_agent = "N/A"
 
-        # Process PNL data including totals rows
+        # Process PNL data
         current_agent = None
         winning_trades = {}
         total_trades = {}
-
-        portfolio_totals_found = False
 
         for row in pnl_values[1:]:
             if not row or len(row) <= pnl_amount_idx:
                 continue
 
-            if "Portfolio Totals" in row[agent_idx]:
-                portfolio_totals_found = True
-                try:
-                    total_invested = float(
-                        row[invested_amount_idx].strip("$").replace(",", "")
-                    )
-                    total_current_value = float(
-                        row[current_value_idx].strip("$").replace(",", "")
-                    )
-                    total_pnl = float(row[pnl_amount_idx].strip("$").replace(",", ""))
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Error processing portfolio totals: {e}")
-            elif "Totals" in row[agent_idx] and current_agent:
-                try:
-                    invested = float(
-                        row[invested_amount_idx].strip("$").replace(",", "")
-                    )
-                    current_val = float(
-                        row[current_value_idx].strip("$").replace(",", "")
-                    )
-                    pnl = float(row[pnl_amount_idx].strip("$").replace(",", ""))
-                    agent_totals[current_agent] = {
-                        "invested": invested,
-                        "current_value": current_val,
-                        "pnl": pnl,
-                    }
-                except (ValueError, IndexError) as e:
-                    logger.warning(
-                        f"Error processing agent totals for {current_agent}: {e}"
-                    )
-            else:
-                agent = row[agent_idx]
-                if agent:  # Only process if agent name exists
-                    current_agent = agent
-
-                    if agent not in winning_trades:
-                        winning_trades[agent] = 0
-                        total_trades[agent] = 0
-
+            # Handle Portfolio Totals row
+            if any("Portfolio Totals" in str(cell) for cell in row):
+                # Find the non-empty cells from the end of the row
+                non_empty_values = [val for val in row[-3:] if val.strip()]
+                if len(non_empty_values) >= 3:
                     try:
-                        price_change_str = row[price_change_idx].strip("%").strip()
-                        if price_change_str:
-                            price_change = float(price_change_str)
-                            total_trades[agent] += 1
-
-                            if price_change > 0:
-                                winning_trades[agent] += 1
-
-                            if price_change > largest_gain:
-                                largest_gain = price_change
-                                largest_gain_ticker = row[ticker_idx]
-                                largest_gain_agent = agent
-                            if price_change < largest_loss:
-                                largest_loss = price_change
-                                largest_loss_ticker = row[ticker_idx]
-                                largest_loss_agent = agent
+                        total_invested = float(non_empty_values[0].strip("$").replace(",", ""))
+                        total_current_value = float(non_empty_values[1].strip("$").replace(",", ""))
+                        total_pnl = float(non_empty_values[2].strip("$").replace(",", ""))
                     except (ValueError, IndexError) as e:
-                        continue
+                        logger.warning(f"Error processing portfolio totals: {e}")
+                continue
+
+            # Handle Agent Totals rows
+            if "Totals" in str(row[agent_idx]):
+                agent_name = row[agent_idx].replace("Totals", "").strip()
+                if agent_name:
+                    # Find the non-empty cells from the end of the row
+                    non_empty_values = [val for val in row[-3:] if val.strip()]
+                    if len(non_empty_values) >= 3:
+                        try:
+                            invested = float(non_empty_values[0].strip("$").replace(",", ""))
+                            current_val = float(non_empty_values[1].strip("$").replace(",", ""))
+                            pnl = float(non_empty_values[2].strip("$").replace(",", ""))
+                            agent_totals[agent_name] = {
+                                "invested": invested,
+                                "current_value": current_val,
+                                "pnl": pnl,
+                            }
+                        except (ValueError, IndexError) as e:
+                            logger.warning(f"Error processing agent totals for {agent_name}: {e}")
+                continue
+
+            # Process regular trade rows
+            agent = row[agent_idx]
+            if agent and not "Totals" in agent:
+                current_agent = agent
+
+                if agent not in winning_trades:
+                    winning_trades[agent] = 0
+                    total_trades[agent] = 0
+
+                try:
+                    price_change_str = row[price_change_idx].strip("%").strip()
+                    if price_change_str:
+                        price_change = float(price_change_str)
+                        total_trades[agent] += 1
+
+                        if price_change > 0:
+                            winning_trades[agent] += 1
+
+                        if price_change > largest_gain:
+                            largest_gain = price_change
+                            largest_gain_ticker = row[ticker_idx]
+                            largest_gain_agent = agent
+                        if price_change < largest_loss:
+                            largest_loss = price_change
+                            largest_loss_ticker = row[ticker_idx]
+                            largest_loss_agent = agent
+                except (ValueError, IndexError) as e:
+                    continue
 
         # Calculate win rates
         win_rates = {}
