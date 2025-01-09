@@ -339,6 +339,18 @@ def update_pnl_sheet(sheet, stats):
     try:
         sheet_rate_limiter.wait_if_needed()
 
+        # Define column indices for better clarity
+        AGENT_COL = 0
+        TICKER_COL = 1
+        CONTRACT_COL = 2
+        ENTRY_TIME_COL = 3
+        ENTRY_PRICE_COL = 4
+        CURRENT_PRICE_COL = 5
+        PRICE_CHANGE_COL = 6
+        INVESTED_COL = 7
+        CURRENT_VALUE_COL = 8
+        PNL_COL = 9
+
         # Clear and reset headers
         sheet.clear()
         headers = [
@@ -348,7 +360,7 @@ def update_pnl_sheet(sheet, stats):
         ]
         sheet.append_row(headers)
 
-        # Group trades by AI agent
+        # Group trades by AI agent and sort agents alphabetically
         agent_trades = {}
         for stat in stats:
             if stat["type"] == "trade":
@@ -357,7 +369,6 @@ def update_pnl_sheet(sheet, stats):
                     agent_trades[agent] = []
                 agent_trades[agent].append(stat)
 
-        # Prepare all rows for batch processing
         all_rows = []
 
         # Process each agent's trades in order
@@ -365,9 +376,8 @@ def update_pnl_sheet(sheet, stats):
             # Sort trades by entry time
             agent_trades[agent].sort(key=lambda x: x["entry_time"])
 
-            # Prepare trade rows for this agent
+            # Add individual trades
             for trade in agent_trades[agent]:
-                # Convert string values to float where needed
                 try:
                     entry_price = float(str(trade['entry_price']).replace('$', '').replace(',', ''))
                     current_price = float(str(trade['current_price']).replace('$', '').replace(',', ''))
@@ -375,23 +385,24 @@ def update_pnl_sheet(sheet, stats):
                     invested_amount = float(str(trade['invested_amount']).replace('$', '').replace(',', ''))
                     current_value = float(str(trade['current_value']).replace('$', '').replace(',', ''))
                     pnl_dollars = float(str(trade['pnl_dollars']).replace('$', '').replace(',', ''))
+
+                    trade_row = [""] * len(headers)
+                    trade_row[AGENT_COL] = agent  # Include agent name in each trade row
+                    trade_row[TICKER_COL] = trade["ticker"]
+                    trade_row[CONTRACT_COL] = trade.get("contract_address", "N/A")
+                    trade_row[ENTRY_TIME_COL] = trade["entry_time"]
+                    trade_row[ENTRY_PRICE_COL] = f"${entry_price:.8f}"
+                    trade_row[CURRENT_PRICE_COL] = f"${current_price:.8f}"
+                    trade_row[PRICE_CHANGE_COL] = f"{price_change:.2f}%"
+                    trade_row[INVESTED_COL] = f"${invested_amount:.2f}"
+                    trade_row[CURRENT_VALUE_COL] = f"${current_value:.2f}"
+                    trade_row[PNL_COL] = f"${pnl_dollars:.2f}"
+
+                    all_rows.append(trade_row)
+
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Error converting values for trade: {trade}. Error: {e}")
                     continue
-
-                row = [
-                    agent,
-                    trade["ticker"],
-                    trade.get("contract_address", "N/A"),
-                    trade["entry_time"],
-                    f"${entry_price:.8f}",
-                    f"${current_price:.8f}",
-                    f"{price_change:.2f}%",
-                    f"${invested_amount:.2f}",
-                    f"${current_value:.2f}",
-                    f"${pnl_dollars:.2f}"
-                ]
-                all_rows.append(row)
 
             # Calculate agent totals
             agent_trades_list = agent_trades[agent]
@@ -402,18 +413,18 @@ def update_pnl_sheet(sheet, stats):
             total_pnl = sum(float(str(t['pnl_dollars']).replace('$', '').replace(',', ''))
                           for t in agent_trades_list)
 
-            # Add empty row + totals row + empty row for separation
-            all_rows.append([""] * len(headers))
-            all_rows.append([
-                f"{agent} Totals", "", "", "",
-                "", "", "",
-                f"${total_invested:.2f}",
-                f"${total_current:.2f}",
-                f"${total_pnl:.2f}"
-            ])
+            # Add totals row
+            totals_row = [""] * len(headers)
+            totals_row[AGENT_COL] = f"{agent} Totals"
+            totals_row[INVESTED_COL] = f"${total_invested:.2f}"
+            totals_row[CURRENT_VALUE_COL] = f"${total_current:.2f}"
+            totals_row[PNL_COL] = f"${total_pnl:.2f}"
+            all_rows.append(totals_row)
+
+            # Add empty row for separation
             all_rows.append([""] * len(headers))
 
-        # Add portfolio totals at the end
+        # Calculate and add portfolio totals
         portfolio_invested = sum(
             sum(float(str(t['invested_amount']).replace('$', '').replace(',', ''))
                 for t in trades)
@@ -430,19 +441,16 @@ def update_pnl_sheet(sheet, stats):
             for trades in agent_trades.values()
         )
 
-
-        # Ensure the Portfolio totals row has the same number of columns as headers
-        portfolio_totals_row = [
-            "Portfolio Totals", "", "", "",
-            "", "", "",
-            f"${portfolio_invested:.2f}",
-            f"${portfolio_current:.2f}",
-            f"${portfolio_pnl:.2f}"
-        ]
-        all_rows.append(portfolio_totals_row)
+        # Add portfolio totals row
+        portfolio_row = [""] * len(headers)
+        portfolio_row[AGENT_COL] = "Portfolio Totals"
+        portfolio_row[INVESTED_COL] = f"${portfolio_invested:.2f}"
+        portfolio_row[CURRENT_VALUE_COL] = f"${portfolio_current:.2f}"
+        portfolio_row[PNL_COL] = f"${portfolio_pnl:.2f}"
+        all_rows.append(portfolio_row)
 
         # Process rows in batches
-        batch_size = 20  # Adjust this based on your rate limits
+        batch_size = 20
         for i in range(0, len(all_rows), batch_size):
             batch = all_rows[i:i + batch_size]
             sheet_rate_limiter.wait_if_needed()
