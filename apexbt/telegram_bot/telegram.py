@@ -6,6 +6,7 @@ from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
+
 class TelegramManager:
     def __init__(self, bot_token, chat_id):
         self.bot_token = bot_token
@@ -14,9 +15,7 @@ class TelegramManager:
 
     async def _send_message(self, message):
         await self.bot.send_message(
-            chat_id=self.chat_id,
-            text=message,
-            parse_mode=ParseMode.HTML
+            chat_id=self.chat_id, text=message, parse_mode=ParseMode.HTML
         )
 
     def send_trade_notification(self, ticker, contract_address, price, ai_agent):
