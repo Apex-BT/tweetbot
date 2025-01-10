@@ -21,6 +21,23 @@ class TradePosition:
     contract_address: str
     network: str
     status: str = "Open"
+    ath_price: float = None
+    ath_timestamp: datetime = None
+
+    def __post_init__(self):
+        # Initialize ATH with entry price if not set
+        if self.ath_price is None:
+            self.ath_price = self.entry_price
+        if self.ath_timestamp is None:
+            self.ath_timestamp = self.entry_timestamp
+
+    def update_ath(self, current_price: float, current_time: datetime) -> bool:
+            """Update ATH if current price is higher. Returns True if ATH was updated."""
+            if current_price > self.ath_price:
+                self.ath_price = current_price
+                self.ath_timestamp = current_time
+                return True
+            return False
 
 
 class TradeManager:
@@ -84,6 +101,7 @@ class TradeManager:
             stats = []
             agent_totals = {}
             grand_total = {"invested_amount": 0, "current_value": 0, "pnl_dollars": 0}
+            current_time = datetime.now()
 
             # Process trades by agent
             for trade in self.active_trades:
@@ -93,6 +111,18 @@ class TradeManager:
 
                 if price_data and price_data.get("price"):
                     current_price = float(price_data["price"])
+                    # Check and update ATH if necessary
+                    ath_updated = trade.update_ath(current_price, current_time)
+                    if ath_updated:
+                        # Update ATH in database
+                        self.update_trade_ath(
+                            trade.ticker,
+                            trade.contract_address,
+                            trade.ath_price,
+                            trade.ath_timestamp
+                        )
+                        logger.info(f"New ATH for {trade.ticker}: ${trade.ath_price:.8f}")
+
                     price_change = (
                         (current_price - trade.entry_price) / trade.entry_price
                     ) * 100
@@ -124,6 +154,8 @@ class TradeManager:
                             ),
                             "entry_price": trade.entry_price,
                             "current_price": current_price,
+                            "ath_price": trade.ath_price,
+                            "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                             "price_change": f"{price_change:.2f}%",
                             "invested_amount": invested_amount,
                             "current_value": current_value,
@@ -154,6 +186,20 @@ class TradeManager:
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
 
+    def update_trade_ath(self, ticker: str, contract_address: str, ath_price: float, ath_timestamp: datetime):
+        """Update ATH values in database"""
+        try:
+            with db.get_db_connection(self.historical) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE trades
+                    SET ath_price = ?, ath_timestamp = ?
+                    WHERE ticker = ? AND contract_address = ? AND status = 'Open'
+                """, (ath_price, ath_timestamp, ticker, contract_address))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating trade ATH: {str(e)}")
+
     def sync_pnl_updates(self, stats, sheets=None):
         """Sync PNL updates to both database and sheets"""
         try:
@@ -178,27 +224,43 @@ class TradeManager:
     def display_stats(self, stats):
         """Display current trading statistics in console"""
         print("\nCurrent Trading Statistics:")
-        print("-" * 50)
+        print("-" * 80)  # Made wider to accommodate more info
 
-        # Display individual trades
+        # Display individual trades with ATH
+        print("Individual Trades:")
+        print(f"{'AI Agent':<12} {'Ticker':<10} {'Current':<12} {'ATH':<12} {'Entry':<12} {'Change':<8} {'From ATH':<8}")
+        print("-" * 80)
+
         for position in stats:
             if position["type"] == "trade":
+                current_price = position['current_price']
+                ath_price = position['ath_price']
+                from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
+
                 print(
-                    f"{position['ai_agent']} - {position['ticker']}: {position['price_change']} "
-                    f"(Entry: ${position['entry_price']:.8f}, Current: ${position['current_price']:.8f})"
+                    f"{position['ai_agent']:<12} "
+                    f"{position['ticker']:<10} "
+                    f"${current_price:<11.8f} "
+                    f"${ath_price:<11.8f} "
+                    f"${position['entry_price']:<11.8f} "
+                    f"{position['price_change']:<8} "
+                    f"{from_ath:>7.2f}%"
                 )
 
         # Display totals by agent
         print("\nAgent Totals:")
+        print("-" * 40)
         for position in stats:
             if position["type"] == "agent_total":
                 print(f"{position['agent']}: ${position['pnl_dollars']:.2f}")
 
         # Display grand total
+        print("\nPortfolio Summary:")
+        print("-" * 40)
         for position in stats:
             if position["type"] == "grand_total":
-                print(f"\nTotal Portfolio PNL: ${position['pnl_dollars']:.2f}")
-        print("-" * 50)
+                print(f"Total Portfolio PNL: ${position['pnl_dollars']:.2f}")
+        print("-" * 80)
 
     def get_current_stats(self):
         """Get current statistics from database"""

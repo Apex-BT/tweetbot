@@ -176,6 +176,8 @@ def setup_trades_worksheet(sheet):
         "Exit Timestamp",
         "PNL Amount",
         "PNL Percentage",
+        "ATH Price",           # New column
+        "ATH Timestamp",
         "Notes",
     ]
     update_worksheet_headers(sheet, headers)
@@ -190,7 +192,10 @@ def setup_pnl_worksheet(sheet):
         "Entry Time",
         "Entry Price",
         "Current Price",
+        "ATH Price",
+        "ATH Timestamp",
         "Price Change %",
+        "From ATH %",
         "Invested Amount ($)",
         "Current Value ($)",
         "PNL ($)",
@@ -257,9 +262,11 @@ def save_trade(sheet, trade_data, pnl_sheet):
         sheet_rate_limiter.wait_if_needed()
 
         if "timestamp" in trade_data:
-            trade_data["timestamp"] = trade_data["timestamp"].strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            trade_data["timestamp"] = trade_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+
+        # Format ATH timestamp if exists
+        if "ath_timestamp" in trade_data and trade_data["ath_timestamp"]:
+            trade_data["ath_timestamp"] = trade_data["ath_timestamp"].strftime("%Y-%m-%d %H:%M:%S")
 
         row = [
             trade_data.get("trade_id", ""),
@@ -279,6 +286,8 @@ def save_trade(sheet, trade_data, pnl_sheet):
             str(trade_data.get("exit_timestamp", "")),
             str(trade_data.get("pnl_amount", "")),
             str(trade_data.get("pnl_percentage", "")),
+            str(trade_data.get("ath_price", "")),
+            str(trade_data.get("ath_timestamp", "")),
             trade_data.get("notes", ""),
         ]
 
@@ -346,17 +355,21 @@ def update_pnl_sheet(sheet, stats):
         ENTRY_TIME_COL = 3
         ENTRY_PRICE_COL = 4
         CURRENT_PRICE_COL = 5
-        PRICE_CHANGE_COL = 6
-        INVESTED_COL = 7
-        CURRENT_VALUE_COL = 8
-        PNL_COL = 9
+        ATH_PRICE_COL = 6
+        ATH_TIME_COL = 7
+        PRICE_CHANGE_COL = 8
+        FROM_ATH_COL = 9
+        INVESTED_COL = 10
+        CURRENT_VALUE_COL = 11
+        PNL_COL = 12
 
         # Clear and reset headers
         sheet.clear()
         headers = [
             "AI Agent", "Ticker", "Contract Address", "Entry Time",
-            "Entry Price", "Current Price", "Price Change %",
-            "Invested Amount ($)", "Current Value ($)", "PNL ($)"
+            "Entry Price", "Current Price", "ATH Price", "ATH Time",
+            "Price Change %", "From ATH %", "Invested Amount ($)",
+            "Current Value ($)", "PNL ($)"
         ]
         sheet.append_row(headers)
 
@@ -381,7 +394,9 @@ def update_pnl_sheet(sheet, stats):
                 try:
                     entry_price = float(str(trade['entry_price']).replace('$', '').replace(',', ''))
                     current_price = float(str(trade['current_price']).replace('$', '').replace(',', ''))
+                    ath_price = float(str(trade.get('ath_price', current_price)).replace('$', '').replace(',', ''))
                     price_change = float(str(trade['price_change']).replace('%', '').replace(',', ''))
+                    from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
                     invested_amount = float(str(trade['invested_amount']).replace('$', '').replace(',', ''))
                     current_value = float(str(trade['current_value']).replace('$', '').replace(',', ''))
                     pnl_dollars = float(str(trade['pnl_dollars']).replace('$', '').replace(',', ''))
@@ -393,7 +408,10 @@ def update_pnl_sheet(sheet, stats):
                     trade_row[ENTRY_TIME_COL] = trade["entry_time"]
                     trade_row[ENTRY_PRICE_COL] = f"${entry_price:.8f}"
                     trade_row[CURRENT_PRICE_COL] = f"${current_price:.8f}"
+                    trade_row[ATH_PRICE_COL] = f"${ath_price:.8f}"
+                    trade_row[ATH_TIME_COL] = trade.get("ath_timestamp", "N/A")
                     trade_row[PRICE_CHANGE_COL] = f"{price_change:.2f}%"
+                    trade_row[FROM_ATH_COL] = f"{from_ath:.2f}%"
                     trade_row[INVESTED_COL] = f"${invested_amount:.2f}"
                     trade_row[CURRENT_VALUE_COL] = f"${current_value:.2f}"
                     trade_row[PNL_COL] = f"${pnl_dollars:.2f}"
@@ -462,6 +480,7 @@ def update_pnl_sheet(sheet, stats):
         logger.error(f"Error updating PNL sheet: {str(e)}")
         logger.exception("Full traceback:")
         raise
+
 
 def update_summary_sheet(sheet, agent_stats, pnl_sheet):
     """Update the summary sheet with overall statistics"""

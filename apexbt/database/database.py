@@ -72,6 +72,8 @@ def init_database(historical=False):
             notes TEXT,
             contract_address TEXT,
             network TEXT,
+            ath_price REAL,
+            ath_timestamp TIMESTAMP,
             FOREIGN KEY(tweet_id) REFERENCES tweets(tweet_id)
         )
         """
