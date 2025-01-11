@@ -150,7 +150,7 @@ def run_historical_analysis(start_date=None, sheets=None):
         if not sheets:
             sheets = setup_google_sheets(historical=True)
 
-        trade_manager = TradeManager(update_interval=300, historical=True)
+        trade_manager = TradeManager(update_interval=180, historical=True)
         trade_manager.start_monitoring(sheets)
 
         for i, username in enumerate(TWITTER_USERS, 1):
@@ -219,14 +219,14 @@ if __name__ == "__main__":
     # process_sample_tweets(sheets)
 
     # 2. Historical analysis
-    # start_date = datetime(2024, 12, 1, tzinfo=timezone.utc)
-    # run_historical_analysis(start_date, sheets)
+    start_date = datetime(2025, 1, 9, tzinfo=timezone.utc)
+    run_historical_analysis(start_date, sheets)
 
     # 3. Just monitor existing historical trades
-    trade_manager = TradeManager(update_interval=60, historical=True)
-    trade_manager.start_monitoring(sheets)
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        trade_manager.stop_monitoring()
+    # trade_manager = TradeManager(update_interval=60, historical=True)
+    # trade_manager.start_monitoring(sheets)
+    # try:
+    #     while True:
+    #         time.sleep(60)
+    # except KeyboardInterrupt:
+    #     trade_manager.stop_monitoring()

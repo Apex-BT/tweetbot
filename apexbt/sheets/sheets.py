@@ -50,7 +50,6 @@ class RateLimiter:
 # Create a global rate limiter instance
 sheet_rate_limiter = RateLimiter(max_requests_per_minute=50)  # Conservative limit
 
-
 def setup_google_sheets(historical=False):
     """Setup Google Sheets connection with multiple worksheets"""
     scope = [
@@ -120,7 +119,6 @@ def setup_google_sheets(historical=False):
         "agent_summary": agent_summary_sheet,
     }
 
-
 def update_worksheet_headers(sheet, headers):
     """Update worksheet headers if they don't match"""
     values = sheet.get_all_values()
@@ -186,19 +184,10 @@ def setup_trades_worksheet(sheet):
 def setup_pnl_worksheet(sheet):
     """Setup the PNL worksheet with sections for each AI agent"""
     headers = [
-        "AI Agent",
-        "Ticker",
-        "Contract Address",
-        "Entry Time",
-        "Entry Price",
-        "Current Price",
-        "ATH Price",
-        "ATH Timestamp",
-        "Price Change %",
-        "From ATH %",
-        "Invested Amount ($)",
-        "Current Value ($)",
-        "PNL ($)",
+        "AI Agent", "Ticker", "Contract Address", "Entry Time",
+                    "Entry Price", "Current Price", "ATH Price", "ATH Time",
+                    "Stop Loss", "Price Change %", "From ATH %", "To Stop Loss %",
+                    "Invested Amount ($)", "Current Value ($)", "PNL ($)"
     ]
     update_worksheet_headers(sheet, headers)
 
@@ -268,6 +257,11 @@ def save_trade(sheet, trade_data, pnl_sheet):
         if "ath_timestamp" in trade_data and trade_data["ath_timestamp"]:
             trade_data["ath_timestamp"] = trade_data["ath_timestamp"].strftime("%Y-%m-%d %H:%M:%S")
 
+        # Calculate stop loss if ATH price is available
+        stop_loss = None
+        if "ath_price" in trade_data and trade_data["ath_price"]:
+            stop_loss = float(trade_data["ath_price"]) * 0.75  # 25% below ATH
+
         row = [
             trade_data.get("trade_id", ""),
             trade_data.get("ai_agent", ""),
@@ -278,7 +272,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
             str(trade_data.get("entry_price", "")),
             str(trade_data.get("position_size", "")),
             trade_data.get("direction", ""),
-            str(trade_data.get("stop_loss", "")),
+            f"${stop_loss:.8f}" if stop_loss else "",
             str(trade_data.get("take_profit", "")),
             str(trade_data.get("tweet_id", "")),
             trade_data.get("status", "Open"),
@@ -286,7 +280,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
             str(trade_data.get("exit_timestamp", "")),
             str(trade_data.get("pnl_amount", "")),
             str(trade_data.get("pnl_percentage", "")),
-            str(trade_data.get("ath_price", "")),
+            f"${trade_data.get('ath_price', '')}",
             str(trade_data.get("ath_timestamp", "")),
             trade_data.get("notes", ""),
         ]
@@ -296,6 +290,76 @@ def save_trade(sheet, trade_data, pnl_sheet):
     except Exception as e:
         logger.error(f"Error saving trade to Google Sheets: {str(e)}")
 
+def update_trades_worksheet(trades_sheet, trades_to_update):
+    """Update ATH and stop loss values in trades worksheet in batches"""
+    try:
+        # Get all values from trades sheet
+        all_values = trades_sheet.get_all_values()
+        headers = all_values[0]
+
+        # Find relevant column indices
+        try:
+            ticker_idx = headers.index("Ticker")
+            contract_idx = headers.index("Contract Address")
+            ath_price_idx = headers.index("ATH Price")
+            ath_timestamp_idx = headers.index("ATH Timestamp")
+            stop_loss_idx = headers.index("Stop Loss")
+            status_idx = headers.index("Status")
+        except ValueError as e:
+            logger.error(f"Required column not found in trades sheet: {e}")
+            return
+
+        # Create batch updates
+        batch_updates = []
+
+        # Find and prepare updates for matching trades
+        for i, row in enumerate(all_values[1:], start=2):  # Start from 2 to account for header row
+            if row[status_idx] == "Open":  # Only update open trades
+                for trade in trades_to_update:
+                    if (row[ticker_idx] == trade['ticker'] and
+                        row[contract_idx] == trade['contract_address']):
+
+                        # Format values
+                        ath_price_str = f"${trade['ath_price']:.8f}"
+                        stop_loss_str = f"${trade['stop_loss']:.8f}"
+                        ath_timestamp_str = trade['ath_timestamp'].strftime("%Y-%m-%d %H:%M:%S")
+
+                        # Add updates to batch
+                        batch_updates.extend([
+                            {
+                                'range': f'{chr(65 + ath_price_idx)}{i}',
+                                'values': [[ath_price_str]]
+                            },
+                            {
+                                'range': f'{chr(65 + ath_timestamp_idx)}{i}',
+                                'values': [[ath_timestamp_str]]
+                            },
+                            {
+                                'range': f'{chr(65 + stop_loss_idx)}{i}',
+                                'values': [[stop_loss_str]]
+                            }
+                        ])
+
+        # Process updates in batches
+        if batch_updates:
+            BATCH_SIZE = 10  # Number of cell updates per batch
+            for i in range(0, len(batch_updates), BATCH_SIZE):
+                batch = batch_updates[i:i + BATCH_SIZE]
+
+                # Wait for rate limiting if needed
+                sheet_rate_limiter.wait_if_needed()
+
+                # Perform batch update
+                trades_sheet.batch_update(batch)
+
+                logger.info(f"Updated batch of {len(batch)} cells in trades worksheet")
+
+            logger.info(f"Completed updating {len(batch_updates)} cells for {len(trades_to_update)} trades")
+
+    except Exception as e:
+        logger.error(f"Error updating trades worksheet: {str(e)}")
+        logger.exception("Full traceback:")
+        raise
 
 def get_sheet_access():
     scope = [
@@ -357,19 +421,21 @@ def update_pnl_sheet(sheet, stats):
         CURRENT_PRICE_COL = 5
         ATH_PRICE_COL = 6
         ATH_TIME_COL = 7
-        PRICE_CHANGE_COL = 8
-        FROM_ATH_COL = 9
-        INVESTED_COL = 10
-        CURRENT_VALUE_COL = 11
-        PNL_COL = 12
+        STOP_LOSS_COL = 8
+        PRICE_CHANGE_COL = 9
+        FROM_ATH_COL = 10
+        TO_STOP_LOSS_COL = 11
+        INVESTED_COL = 12
+        CURRENT_VALUE_COL = 13
+        PNL_COL = 14
 
         # Clear and reset headers
         sheet.clear()
         headers = [
             "AI Agent", "Ticker", "Contract Address", "Entry Time",
             "Entry Price", "Current Price", "ATH Price", "ATH Time",
-            "Price Change %", "From ATH %", "Invested Amount ($)",
-            "Current Value ($)", "PNL ($)"
+            "Stop Loss", "Price Change %", "From ATH %", "To Stop Loss %",
+            "Invested Amount ($)", "Current Value ($)", "PNL ($)"
         ]
         sheet.append_row(headers)
 
@@ -395,8 +461,10 @@ def update_pnl_sheet(sheet, stats):
                     entry_price = float(str(trade['entry_price']).replace('$', '').replace(',', ''))
                     current_price = float(str(trade['current_price']).replace('$', '').replace(',', ''))
                     ath_price = float(str(trade.get('ath_price', current_price)).replace('$', '').replace(',', ''))
+                    stop_loss = ath_price * 0.75  # 25% below ATH
                     price_change = float(str(trade['price_change']).replace('%', '').replace(',', ''))
                     from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
+                    to_stop_loss = ((current_price - stop_loss) / current_price * 100)
                     invested_amount = float(str(trade['invested_amount']).replace('$', '').replace(',', ''))
                     current_value = float(str(trade['current_value']).replace('$', '').replace(',', ''))
                     pnl_dollars = float(str(trade['pnl_dollars']).replace('$', '').replace(',', ''))
@@ -410,8 +478,10 @@ def update_pnl_sheet(sheet, stats):
                     trade_row[CURRENT_PRICE_COL] = f"${current_price:.8f}"
                     trade_row[ATH_PRICE_COL] = f"${ath_price:.8f}"
                     trade_row[ATH_TIME_COL] = trade.get("ath_timestamp", "N/A")
+                    trade_row[STOP_LOSS_COL] = f"${stop_loss:.8f}"
                     trade_row[PRICE_CHANGE_COL] = f"{price_change:.2f}%"
                     trade_row[FROM_ATH_COL] = f"{from_ath:.2f}%"
+                    trade_row[TO_STOP_LOSS_COL] = f"{to_stop_loss:.2f}%"
                     trade_row[INVESTED_COL] = f"${invested_amount:.2f}"
                     trade_row[CURRENT_VALUE_COL] = f"${current_value:.2f}"
                     trade_row[PNL_COL] = f"${pnl_dollars:.2f}"
