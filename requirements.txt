@@ -4,4 +4,4 @@ gspread
 oauth2client
 pytest
 pytest-mock
-python-telegram-bot
+python-telegram-bot==13.7
