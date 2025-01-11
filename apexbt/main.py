@@ -1,20 +1,18 @@
 import logging
 from apexbt.tweet.tweet import TwitterManager
 from apexbt.database.database import init_database, save_tweet, is_tweet_processed
-from apexbt.crypto.crypto import get_crypto_price_dexscreener as get_crypto_price
+from apexbt.crypto.crypto import get_crypto_price_dexscreener
 from apexbt.trade.trade import TradeManager
 from apexbt.sheets.sheets import setup_google_sheets
 from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
 from apexbt.telegram_bot.telegram import TelegramManager
-from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_USERS
+from apexbt.crypto.codex import Codex
+from apexbt.signal.signal import SignalAPI
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Twitter users to monitor
-TWITTER_USERS = ["Vader_AI_", "freysa_ai", "aixbt_agent", "tri_sigma_", "gekko_agent"]
-
 
 def process_new_tweet(tweet):
     """Process a single new tweet in real-time"""
@@ -34,27 +32,55 @@ def process_new_tweet(tweet):
         # Get price data for single ticker
         price_data = None
         if ticker_status == "Single ticker":
-            price_data = get_crypto_price(ticker)
+            # First get contract/network from DexScreener
+            dex_data = get_crypto_price_dexscreener(ticker)
 
-            if price_data and price_data.get("current_price"):
-                # Add trade to manager
-                if trade_manager.add_trade(
-                    ticker,
-                    price_data["contract_address"],
-                    str(tweet.id),
-                    float(price_data["current_price"]),
-                    tweet.author,
-                ):
-                    logger.info(
-                        f"Opened new trade for {ticker} at {price_data['current_price']} by {tweet.author}"
-                    )
-                    # Send Telegram notification
-                    telegram_manager.send_trade_notification(
+            if dex_data:
+                contract_address = dex_data.get("contract_address")
+                network = dex_data.get("network")
+                logger.info(
+                    f"Found contract {contract_address} on network {network} for {ticker}"
+                )
+
+                # Use contract info to get current price from Codex
+                price_data = Codex.get_crypto_price(contract_address, network)
+
+                if price_data and price_data.get("price"):
+                    # Add trade to manager
+                    if trade_manager.add_trade(
                         ticker,
                         price_data["contract_address"],
-                        float(price_data["current_price"]),
+                        str(tweet.id),
+                        float(price_data["price"]),
                         tweet.author,
-                    )
+                        network,
+                        entry_timestamp=tweet.created_at,
+                    ):
+                        logger.info(
+                            f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"
+                        )
+                        # Send Telegram notification
+                        telegram_manager.send_trade_notification(
+                            ticker,
+                            price_data["contract_address"],
+                            float(price_data["price"]),
+                            tweet.author,
+                            network=network
+                        )
+                        # Send signal to signal bot with logging
+                        logger.info(f"Attempting to send signal for {ticker} to signal bot...")
+                        signal_response = signal_api.send_signal(
+                            token=ticker,
+                            contract=price_data["contract_address"],
+                            entry_price=float(price_data["price"]),
+                            signal_from=tweet.author,
+                            chain=network
+                        )
+                        logger.info(f"Signal API response: {signal_response}")
+                else:
+                    logger.warning(f"No price data found from Codex for {ticker}")
+            else:
+                logger.warning(f"Could not find token info on DexScreener for {ticker}")
 
         # Save tweet to both database and sheets
         save_to_both(tweet, ticker, ticker_status, price_data, tweet.author, sheets)
@@ -76,16 +102,18 @@ def save_to_both(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None
 
 
 def main():
-    global trade_manager  # Make trade_manager accessible to process_new_tweet
+    global trade_manager
     global sheets
     global telegram_manager
+    global signal_api
 
     # Initialize components
     init_database()
     twitter_manager = TwitterManager()
-    trade_manager = TradeManager()
+    trade_manager = TradeManager(update_interval=60)
     sheets = setup_google_sheets()
     telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    signal_api = SignalAPI()
 
     # Verify Twitter credentials
     if not twitter_manager.verify_credentials():
