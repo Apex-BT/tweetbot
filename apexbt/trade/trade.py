@@ -21,6 +21,34 @@ class TradePosition:
     contract_address: str
     network: str
     status: str = "Open"
+    ath_price: float = None
+    ath_timestamp: datetime = None
+    stop_loss: float = None
+
+    def __post_init__(self):
+        # Initialize ATH with entry price if not set
+        if self.ath_price is None:
+            self.ath_price = self.entry_price
+        if self.ath_timestamp is None:
+            self.ath_timestamp = self.entry_timestamp
+        self.update_stop_loss()
+
+    def update_ath(self, current_price: float, current_time: datetime) -> bool:
+            """Update ATH and stop loss if current price is higher"""
+            if current_price > self.ath_price:
+                self.ath_price = current_price
+                self.ath_timestamp = current_time
+                self.update_stop_loss()
+                return True
+            return False
+
+    def update_stop_loss(self):
+            """Calculate stop loss as 75% of ATH price (25% below ATH)"""
+            self.stop_loss = self.ath_price * 0.75
+
+    def check_stop_loss(self, current_price: float) -> bool:
+            """Check if current price has hit stop loss"""
+            return current_price <= self.stop_loss
 
 
 class TradeManager:
@@ -84,6 +112,10 @@ class TradeManager:
             stats = []
             agent_totals = {}
             grand_total = {"invested_amount": 0, "current_value": 0, "pnl_dollars": 0}
+            current_time = datetime.now()
+
+            # Track trades that need updating in sheets
+            trades_to_update = []
 
             # Process trades by agent
             for trade in self.active_trades:
@@ -93,6 +125,38 @@ class TradeManager:
 
                 if price_data and price_data.get("price"):
                     current_price = float(price_data["price"])
+
+                    # Check stop loss
+                    if trade.check_stop_loss(current_price):
+                        logger.warning(
+                            f"🚨 STOP LOSS ALERT: {trade.ticker} has hit stop loss at ${current_price:.8f}"
+                            f" (Stop Loss: ${trade.stop_loss:.8f}, ATH: ${trade.ath_price:.8f})"
+                        )
+
+                    # Check and update ATH if necessary
+                    ath_updated = trade.update_ath(current_price, current_time)
+                    if ath_updated:
+                        # Update ATH in database
+                        self.update_trade_ath_and_stop_loss(
+                            trade.ticker,
+                            trade.contract_address,
+                            trade.ath_price,
+                            trade.ath_timestamp,
+                            trade.stop_loss
+                        )
+                        logger.info(
+                            f"New ATH for {trade.ticker}: ${trade.ath_price:.8f}, "
+                            f"New Stop Loss: ${trade.stop_loss:.8f}"
+                        )
+                        # Add to trades that need updating in sheets
+                        trades_to_update.append({
+                            'ticker': trade.ticker,
+                            'contract_address': trade.contract_address,
+                            'ath_price': trade.ath_price,
+                            'ath_timestamp': trade.ath_timestamp,
+                            'stop_loss': trade.stop_loss
+                        })
+
                     price_change = (
                         (current_price - trade.entry_price) / trade.entry_price
                     ) * 100
@@ -124,6 +188,8 @@ class TradeManager:
                             ),
                             "entry_price": trade.entry_price,
                             "current_price": current_price,
+                            "ath_price": trade.ath_price,
+                            "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                             "price_change": f"{price_change:.2f}%",
                             "invested_amount": invested_amount,
                             "current_value": current_value,
@@ -145,6 +211,11 @@ class TradeManager:
             # Update both database and sheets ONCE after processing all trades
             self.sync_pnl_updates(stats, sheets)
 
+            # Update trades worksheet if needed
+            if trades_to_update and sheets and "trades" in sheets:
+                from apexbt.sheets.sheets import update_trades_worksheet
+                update_trades_worksheet(sheets["trades"], trades_to_update)
+
             # Update agent summary if sheets available
             if sheets and "agent_summary" in sheets:
                 from apexbt.sheets.sheets import update_agent_summary
@@ -153,6 +224,22 @@ class TradeManager:
 
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
+
+    def update_trade_ath_and_stop_loss(self, ticker: str, contract_address: str,
+                                      ath_price: float, ath_timestamp: datetime,
+                                      stop_loss: float):
+        """Update ATH and stop loss values in database"""
+        try:
+            with db.get_db_connection(self.historical) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE trades
+                    SET ath_price = ?, ath_timestamp = ?, stop_loss = ?
+                    WHERE ticker = ? AND contract_address = ? AND status = 'Open'
+                """, (ath_price, ath_timestamp, stop_loss, ticker, contract_address))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating trade ATH and stop loss: {str(e)}")
 
     def sync_pnl_updates(self, stats, sheets=None):
         """Sync PNL updates to both database and sheets"""
@@ -178,27 +265,47 @@ class TradeManager:
     def display_stats(self, stats):
         """Display current trading statistics in console"""
         print("\nCurrent Trading Statistics:")
-        print("-" * 50)
+        print("-" * 100)  # Made wider to accommodate more info
 
-        # Display individual trades
+        # Display individual trades with ATH and Stop Loss
+        print("Individual Trades:")
+        print(f"{'AI Agent':<12} {'Ticker':<10} {'Current':<12} {'ATH':<12} {'Stop Loss':<12} {'Entry':<12} {'Change':<8} {'From ATH':<8} {'To SL':<8}")
+        print("-" * 100)
+
         for position in stats:
             if position["type"] == "trade":
+                current_price = position['current_price']
+                ath_price = position['ath_price']
+                stop_loss = ath_price * 0.75  # 25% below ATH
+                from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
+                to_stop_loss = ((current_price - stop_loss) / current_price * 100)
+
                 print(
-                    f"{position['ai_agent']} - {position['ticker']}: {position['price_change']} "
-                    f"(Entry: ${position['entry_price']:.8f}, Current: ${position['current_price']:.8f})"
+                    f"{position['ai_agent']:<12} "
+                    f"{position['ticker']:<10} "
+                    f"${current_price:<11.8f} "
+                    f"${ath_price:<11.8f} "
+                    f"${stop_loss:<11.8f} "
+                    f"${position['entry_price']:<11.8f} "
+                    f"{position['price_change']:<8} "
+                    f"{from_ath:>7.2f}% "
+                    f"{to_stop_loss:>7.2f}%"
                 )
 
         # Display totals by agent
         print("\nAgent Totals:")
+        print("-" * 40)
         for position in stats:
             if position["type"] == "agent_total":
                 print(f"{position['agent']}: ${position['pnl_dollars']:.2f}")
 
         # Display grand total
+        print("\nPortfolio Summary:")
+        print("-" * 40)
         for position in stats:
             if position["type"] == "grand_total":
-                print(f"\nTotal Portfolio PNL: ${position['pnl_dollars']:.2f}")
-        print("-" * 50)
+                print(f"Total Portfolio PNL: ${position['pnl_dollars']:.2f}")
+        print("-" * 80)
 
     def get_current_stats(self):
         """Get current statistics from database"""
@@ -264,6 +371,11 @@ class TradeManager:
         if entry_timestamp is None:
             entry_timestamp = datetime.now()
 
+        # Initialize ATH with entry price
+        ath_price = entry_price
+        ath_timestamp = entry_timestamp
+        stop_loss = ath_price * 0.75  # 25% below ATH
+
         trade_data = {
             "trade_id": f"T{entry_timestamp.strftime('%Y%m%d%H%M%S%f')}",
             "ai_agent": ai_agent,
@@ -274,6 +386,9 @@ class TradeManager:
             "entry_price": entry_price,
             "position_size": 100.0,
             "direction": "Long",
+            "ath_price": ath_price,
+            "ath_timestamp": ath_timestamp,
+            "stop_loss": stop_loss,
             "tweet_id": tweet_id,
             "status": "Open",
             "notes": "Auto trade based on tweet signal",

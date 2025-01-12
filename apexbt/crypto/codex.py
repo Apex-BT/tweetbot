@@ -43,8 +43,8 @@ class Codex:
         {"Authorization": CODEX_API_KEY, "Content-Type": "application/json"}
     )
     SUPPORTED_NETWORKS = {
-        "ethereum": Network.ETHEREUM.value,
-        "arbitrum": Network.ARBITRUM.value,
+        # "ethereum": Network.ETHEREUM.value,
+        # "arbitrum": Network.ARBITRUM.value,
         "base": Network.BASE.value,
         "solana": Network.SOLANA.value,
     }
