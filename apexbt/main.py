@@ -9,6 +9,7 @@ from apexbt.telegram_bot.telegram import TelegramManager
 from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_USERS
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
+from apexbt.agent.trading_agent import TradingAgent
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +28,11 @@ def process_new_tweet(tweet):
         # Extract ticker from tweet
         ticker, ticker_status = TwitterManager.extract_ticker(tweet.text)
         if not ticker:
+            return
+
+        # Only reject if we're confident about negative sentiment
+        if not trading_agent.should_take_trade(tweet.text, ticker):
+            logger.info(f"Trade rejected due to negative sentiment")
             return
 
         # Get price data for single ticker
@@ -106,6 +112,7 @@ def main():
     global sheets
     global telegram_manager
     global signal_api
+    global trading_agent
 
     # Initialize components
     init_database()
@@ -114,6 +121,7 @@ def main():
     sheets = setup_google_sheets()
     telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     signal_api = SignalAPI()
+    trading_agent = TradingAgent()
 
     # Verify Twitter credentials
     if not twitter_manager.verify_credentials():
