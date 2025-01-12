@@ -5,3 +5,6 @@ oauth2client
 pytest
 pytest-mock
 python-telegram-bot==13.7
+langchain
+langchain-google-genai
+google-cloud-api-keys
