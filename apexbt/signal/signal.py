@@ -1,11 +1,12 @@
 import logging
 import requests
 from typing import Dict, Optional
+from apexbt.config.config import SIGNAL_API_BASE_URL
 
 logger = logging.getLogger(__name__)
 
 class SignalAPI:
-    def __init__(self, base_url: str = "http://54.88.224.75:8000"):
+    def __init__(self, base_url: str = SIGNAL_API_BASE_URL):
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
