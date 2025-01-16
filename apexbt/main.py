@@ -71,7 +71,8 @@ def process_new_tweet(tweet):
                             price_data["contract_address"],
                             float(price_data["price"]),
                             tweet.author,
-                            network=network
+                            network=network,
+                            market_cap=price_data.get("market_cap")
                         )
                         # Send signal to signal bot with logging
                         logger.info(f"Attempting to send signal for {ticker} to signal bot...")

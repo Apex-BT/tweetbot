@@ -21,12 +21,20 @@ class TelegramManager:
             logger.error(f"Telegram API Error: {e}")
             raise
 
-    def send_trade_notification(self, ticker, contract_address, price, ai_agent, network="ethereum", tx_type="buy"):
+    def send_trade_notification(self, ticker, contract_address, price, ai_agent, network="ethereum", tx_type="buy", market_cap=None):
         try:
+            formatted_mcap = "N/A"
+            if market_cap:
+                if market_cap >= 1_000_000:
+                    formatted_mcap = f"${market_cap/1_000_000:.1f}M"
+                else:
+                    formatted_mcap = f"${market_cap/1_000:.1f}K"
+
             message = (
                 f"🚨 New Trade Alert 🚨\n\n"
                 f"Token: <code>${ticker}</code>\n"
                 f"Contract: <code>{contract_address}</code>\n"
+                f"Market Cap: <code>{formatted_mcap}</code>\n"
                 f"Entry Price: <code>${price:.8f}</code>\n"
                 f"Signal From: <code>{ai_agent}</code>\n"
                 f"Chain: <code>{network.lower()}</code>\n"

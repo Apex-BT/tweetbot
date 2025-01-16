@@ -43,7 +43,7 @@ rate_limiter = RateLimiter()
 
 def get_crypto_price_dexscreener(ticker):
     """
-    Get cryptocurrency price data from DexScreener API
+    Get cryptocurrency price data from DexScreener API with market cap filter
 
     Args:
         ticker: Cryptocurrency ticker symbol
@@ -72,9 +72,30 @@ def get_crypto_price_dexscreener(ticker):
                 logger.warning(f"No pairs found with matching ticker {ticker} on DexScreener")
                 return None
 
-            # Sort matching pairs by both liquidity and volume
+            # Filter for market cap <= 250M
+            filtered_pairs = []
+            for pair in matching_pairs:
+                # Get market cap in USD
+                price_usd = float(pair.get('priceUsd', 0) or 0)
+                total_supply = float(pair.get('baseToken', {}).get('totalSupply', 0) or 0)
+
+                # Calculate market cap
+                market_cap = price_usd * total_supply
+
+                # Only include pairs with market cap <= 250M
+                if market_cap <= 250000000:  # 250 million
+                    filtered_pairs.append(pair)
+                    logger.info(f"Found {ticker} with market cap: ${market_cap:,.2f}")
+                else:
+                    logger.info(f"Skipping {ticker} - market cap too high: ${market_cap:,.2f}")
+
+            if not filtered_pairs:
+                logger.warning(f"No pairs found for {ticker} with market cap <= 250M")
+                return None
+
+            # Sort filtered pairs by both liquidity and volume
             sorted_pairs = sorted(
-                matching_pairs,
+                filtered_pairs,
                 key=lambda x: (
                     float(x.get('volume', {}).get('h24', 0) or 0),  # Prioritize volume
                     float(x.get('liquidity', {}).get('usd', 0) or 0)  # Then liquidity
@@ -96,6 +117,7 @@ def get_crypto_price_dexscreener(ticker):
                 "last_updated": best_pair.get('pairCreatedAt'),
                 "pair_address": best_pair.get('pairAddress'),
                 "contract_address": best_pair.get('baseToken', {}).get('address'),
+                "market_cap": price_usd * total_supply
             }
 
         else:
