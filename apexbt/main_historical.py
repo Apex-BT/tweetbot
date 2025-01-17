@@ -78,7 +78,7 @@ def process_tweets(tweets, trade_manager, sheets=None):
                             tweet.author,
                             network,
                             entry_timestamp=tweet.created_at,
-                            market_cap=market_cap
+                            market_cap=market_cap,
                         ):
                             logger.info(
                                 f"Opened new historical trade for {ticker} at {historical_price_data['price']}"
@@ -152,7 +152,9 @@ def run_historical_analysis(start_date=None, sheets=None):
         if not sheets:
             sheets = setup_google_sheets(historical=True)
 
-        trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS, historical=True)
+        trade_manager = TradeManager(
+            update_interval=TRADE_UPDATE_INTERVAL_SECONDS, historical=True
+        )
         trade_manager.start_monitoring(sheets)
 
         for i, username in enumerate(TWITTER_USERS, 1):

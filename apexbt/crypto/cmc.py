@@ -9,6 +9,7 @@ from config.config import COINMARKETCAP_API_KEY
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class RateLimiter:
     def __init__(self, calls_per_minute=25):  # CMC Free tier allows 30 calls/minute
         self.calls_per_minute = calls_per_minute

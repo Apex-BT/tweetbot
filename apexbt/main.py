@@ -15,6 +15,7 @@ from apexbt.agent.agent import TradeAgent
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def process_new_tweet(tweet):
     """Process a single new tweet in real-time"""
     try:
@@ -63,7 +64,7 @@ def process_new_tweet(tweet):
                         tweet.author,
                         network,
                         entry_timestamp=tweet.created_at,
-                        market_cap=market_cap
+                        market_cap=market_cap,
                     ):
                         logger.info(
                             f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"

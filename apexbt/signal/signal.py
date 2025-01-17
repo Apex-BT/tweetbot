@@ -5,21 +5,22 @@ from apexbt.config.config import SIGNAL_API_BASE_URL
 
 logger = logging.getLogger(__name__)
 
+
 class SignalAPI:
     def __init__(self, base_url: str = SIGNAL_API_BASE_URL):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update({
-            'Content-Type': 'application/json'
-        })
+        self.session.headers.update({"Content-Type": "application/json"})
 
-    def send_signal(self,
-                   token: str,
-                   contract: str,
-                   entry_price: float,
-                   signal_from: str,
-                   chain: str,
-                   tx_type: str = "buy") -> Optional[Dict]:
+    def send_signal(
+        self,
+        token: str,
+        contract: str,
+        entry_price: float,
+        signal_from: str,
+        chain: str,
+        tx_type: str = "buy",
+    ) -> Optional[Dict]:
         """
         Send a trading signal to the signal bot API
 
@@ -41,19 +42,18 @@ class SignalAPI:
                 "entry_price": entry_price,
                 "signal_from": signal_from,
                 "chain": chain.lower(),
-                "tx_type": tx_type
+                "tx_type": tx_type,
             }
 
-            response = self.session.post(
-                f"{self.base_url}/signal",
-                json=payload
-            )
+            response = self.session.post(f"{self.base_url}/signal", json=payload)
 
             if response.status_code == 200:
                 logger.info(f"Successfully sent signal for {token}")
                 return response.json()
             else:
-                logger.error(f"Failed to send signal. Status code: {response.status_code}. Response: {response.text}")
+                logger.error(
+                    f"Failed to send signal. Status code: {response.status_code}. Response: {response.text}"
+                )
                 return None
 
         except Exception as e:

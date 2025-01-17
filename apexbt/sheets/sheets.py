@@ -50,6 +50,7 @@ class RateLimiter:
 # Create a global rate limiter instance
 sheet_rate_limiter = RateLimiter(max_requests_per_minute=50)  # Conservative limit
 
+
 def setup_google_sheets(historical=False):
     """Setup Google Sheets connection with multiple worksheets"""
     scope = [
@@ -119,6 +120,7 @@ def setup_google_sheets(historical=False):
         "agent_summary": agent_summary_sheet,
     }
 
+
 def update_worksheet_headers(sheet, headers):
     """Update worksheet headers if they don't match"""
     values = sheet.get_all_values()
@@ -185,10 +187,21 @@ def setup_trades_worksheet(sheet):
 def setup_pnl_worksheet(sheet):
     """Setup the PNL worksheet with sections for each AI agent"""
     headers = [
-        "AI Agent", "Ticker", "Contract Address", "Entry Time",
-                    "Entry Price", "Current Price", "ATH Price", "ATH Time",
-                    "Stop Loss", "Price Change %", "From ATH %", "To Stop Loss %",
-                    "Invested Amount ($)", "Current Value ($)", "PNL ($)"
+        "AI Agent",
+        "Ticker",
+        "Contract Address",
+        "Entry Time",
+        "Entry Price",
+        "Current Price",
+        "ATH Price",
+        "ATH Time",
+        "Stop Loss",
+        "Price Change %",
+        "From ATH %",
+        "To Stop Loss %",
+        "Invested Amount ($)",
+        "Current Value ($)",
+        "PNL ($)",
     ]
     update_worksheet_headers(sheet, headers)
 
@@ -252,11 +265,15 @@ def save_trade(sheet, trade_data, pnl_sheet):
         sheet_rate_limiter.wait_if_needed()
 
         if "timestamp" in trade_data:
-            trade_data["timestamp"] = trade_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            trade_data["timestamp"] = trade_data["timestamp"].strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
         # Format ATH timestamp if exists
         if "ath_timestamp" in trade_data and trade_data["ath_timestamp"]:
-            trade_data["ath_timestamp"] = trade_data["ath_timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            trade_data["ath_timestamp"] = trade_data["ath_timestamp"].strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
         # Calculate stop loss if ATH price is available
         stop_loss = None
@@ -266,7 +283,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
         # Format market cap for display
         market_cap_display = (
             f"${trade_data['market_cap']:,.2f}"
-            if 'market_cap' in trade_data and trade_data['market_cap']
+            if "market_cap" in trade_data and trade_data["market_cap"]
             else "N/A"
         )
 
@@ -299,6 +316,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
     except Exception as e:
         logger.error(f"Error saving trade to Google Sheets: {str(e)}")
 
+
 def update_trades_worksheet(trades_sheet, trades_to_update):
     """Update ATH and stop loss values in trades worksheet in batches"""
     try:
@@ -322,38 +340,46 @@ def update_trades_worksheet(trades_sheet, trades_to_update):
         batch_updates = []
 
         # Find and prepare updates for matching trades
-        for i, row in enumerate(all_values[1:], start=2):  # Start from 2 to account for header row
+        for i, row in enumerate(
+            all_values[1:], start=2
+        ):  # Start from 2 to account for header row
             if row[status_idx] == "Open":  # Only update open trades
                 for trade in trades_to_update:
-                    if (row[ticker_idx] == trade['ticker'] and
-                        row[contract_idx] == trade['contract_address']):
+                    if (
+                        row[ticker_idx] == trade["ticker"]
+                        and row[contract_idx] == trade["contract_address"]
+                    ):
 
                         # Format values
                         ath_price_str = f"${trade['ath_price']:.8f}"
                         stop_loss_str = f"${trade['stop_loss']:.8f}"
-                        ath_timestamp_str = trade['ath_timestamp'].strftime("%Y-%m-%d %H:%M:%S")
+                        ath_timestamp_str = trade["ath_timestamp"].strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
 
                         # Add updates to batch
-                        batch_updates.extend([
-                            {
-                                'range': f'{chr(65 + ath_price_idx)}{i}',
-                                'values': [[ath_price_str]]
-                            },
-                            {
-                                'range': f'{chr(65 + ath_timestamp_idx)}{i}',
-                                'values': [[ath_timestamp_str]]
-                            },
-                            {
-                                'range': f'{chr(65 + stop_loss_idx)}{i}',
-                                'values': [[stop_loss_str]]
-                            }
-                        ])
+                        batch_updates.extend(
+                            [
+                                {
+                                    "range": f"{chr(65 + ath_price_idx)}{i}",
+                                    "values": [[ath_price_str]],
+                                },
+                                {
+                                    "range": f"{chr(65 + ath_timestamp_idx)}{i}",
+                                    "values": [[ath_timestamp_str]],
+                                },
+                                {
+                                    "range": f"{chr(65 + stop_loss_idx)}{i}",
+                                    "values": [[stop_loss_str]],
+                                },
+                            ]
+                        )
 
         # Process updates in batches
         if batch_updates:
             BATCH_SIZE = 10  # Number of cell updates per batch
             for i in range(0, len(batch_updates), BATCH_SIZE):
-                batch = batch_updates[i:i + BATCH_SIZE]
+                batch = batch_updates[i : i + BATCH_SIZE]
 
                 # Wait for rate limiting if needed
                 sheet_rate_limiter.wait_if_needed()
@@ -363,12 +389,15 @@ def update_trades_worksheet(trades_sheet, trades_to_update):
 
                 logger.info(f"Updated batch of {len(batch)} cells in trades worksheet")
 
-            logger.info(f"Completed updating {len(batch_updates)} cells for {len(trades_to_update)} trades")
+            logger.info(
+                f"Completed updating {len(batch_updates)} cells for {len(trades_to_update)} trades"
+            )
 
     except Exception as e:
         logger.error(f"Error updating trades worksheet: {str(e)}")
         logger.exception("Full traceback:")
         raise
+
 
 def get_sheet_access():
     scope = [
@@ -441,10 +470,21 @@ def update_pnl_sheet(sheet, stats):
         # Clear and reset headers
         sheet.clear()
         headers = [
-            "AI Agent", "Ticker", "Contract Address", "Entry Time",
-            "Entry Price", "Current Price", "ATH Price", "ATH Time",
-            "Stop Loss", "Price Change %", "From ATH %", "To Stop Loss %",
-            "Invested Amount ($)", "Current Value ($)", "PNL ($)"
+            "AI Agent",
+            "Ticker",
+            "Contract Address",
+            "Entry Time",
+            "Entry Price",
+            "Current Price",
+            "ATH Price",
+            "ATH Time",
+            "Stop Loss",
+            "Price Change %",
+            "From ATH %",
+            "To Stop Loss %",
+            "Invested Amount ($)",
+            "Current Value ($)",
+            "PNL ($)",
         ]
         sheet.append_row(headers)
 
@@ -467,16 +507,36 @@ def update_pnl_sheet(sheet, stats):
             # Add individual trades
             for trade in agent_trades[agent]:
                 try:
-                    entry_price = float(str(trade['entry_price']).replace('$', '').replace(',', ''))
-                    current_price = float(str(trade['current_price']).replace('$', '').replace(',', ''))
-                    ath_price = float(str(trade.get('ath_price', current_price)).replace('$', '').replace(',', ''))
+                    entry_price = float(
+                        str(trade["entry_price"]).replace("$", "").replace(",", "")
+                    )
+                    current_price = float(
+                        str(trade["current_price"]).replace("$", "").replace(",", "")
+                    )
+                    ath_price = float(
+                        str(trade.get("ath_price", current_price))
+                        .replace("$", "")
+                        .replace(",", "")
+                    )
                     stop_loss = ath_price * 0.75  # 25% below ATH
-                    price_change = float(str(trade['price_change']).replace('%', '').replace(',', ''))
-                    from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
-                    to_stop_loss = ((current_price - stop_loss) / current_price * 100)
-                    invested_amount = float(str(trade['invested_amount']).replace('$', '').replace(',', ''))
-                    current_value = float(str(trade['current_value']).replace('$', '').replace(',', ''))
-                    pnl_dollars = float(str(trade['pnl_dollars']).replace('$', '').replace(',', ''))
+                    price_change = float(
+                        str(trade["price_change"]).replace("%", "").replace(",", "")
+                    )
+                    from_ath = (
+                        ((current_price - ath_price) / ath_price * 100)
+                        if ath_price
+                        else 0
+                    )
+                    to_stop_loss = (current_price - stop_loss) / current_price * 100
+                    invested_amount = float(
+                        str(trade["invested_amount"]).replace("$", "").replace(",", "")
+                    )
+                    current_value = float(
+                        str(trade["current_value"]).replace("$", "").replace(",", "")
+                    )
+                    pnl_dollars = float(
+                        str(trade["pnl_dollars"]).replace("$", "").replace(",", "")
+                    )
 
                     trade_row = [""] * len(headers)
                     trade_row[AGENT_COL] = agent  # Include agent name in each trade row
@@ -498,17 +558,25 @@ def update_pnl_sheet(sheet, stats):
                     all_rows.append(trade_row)
 
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Error converting values for trade: {trade}. Error: {e}")
+                    logger.warning(
+                        f"Error converting values for trade: {trade}. Error: {e}"
+                    )
                     continue
 
             # Calculate agent totals
             agent_trades_list = agent_trades[agent]
-            total_invested = sum(float(str(t['invested_amount']).replace('$', '').replace(',', ''))
-                               for t in agent_trades_list)
-            total_current = sum(float(str(t['current_value']).replace('$', '').replace(',', ''))
-                              for t in agent_trades_list)
-            total_pnl = sum(float(str(t['pnl_dollars']).replace('$', '').replace(',', ''))
-                          for t in agent_trades_list)
+            total_invested = sum(
+                float(str(t["invested_amount"]).replace("$", "").replace(",", ""))
+                for t in agent_trades_list
+            )
+            total_current = sum(
+                float(str(t["current_value"]).replace("$", "").replace(",", ""))
+                for t in agent_trades_list
+            )
+            total_pnl = sum(
+                float(str(t["pnl_dollars"]).replace("$", "").replace(",", ""))
+                for t in agent_trades_list
+            )
 
             # Add totals row
             totals_row = [""] * len(headers)
@@ -523,18 +591,24 @@ def update_pnl_sheet(sheet, stats):
 
         # Calculate and add portfolio totals
         portfolio_invested = sum(
-            sum(float(str(t['invested_amount']).replace('$', '').replace(',', ''))
-                for t in trades)
+            sum(
+                float(str(t["invested_amount"]).replace("$", "").replace(",", ""))
+                for t in trades
+            )
             for trades in agent_trades.values()
         )
         portfolio_current = sum(
-            sum(float(str(t['current_value']).replace('$', '').replace(',', ''))
-                for t in trades)
+            sum(
+                float(str(t["current_value"]).replace("$", "").replace(",", ""))
+                for t in trades
+            )
             for trades in agent_trades.values()
         )
         portfolio_pnl = sum(
-            sum(float(str(t['pnl_dollars']).replace('$', '').replace(',', ''))
-                for t in trades)
+            sum(
+                float(str(t["pnl_dollars"]).replace("$", "").replace(",", ""))
+                for t in trades
+            )
             for trades in agent_trades.values()
         )
 
@@ -549,7 +623,7 @@ def update_pnl_sheet(sheet, stats):
         # Process rows in batches
         batch_size = 20
         for i in range(0, len(all_rows), batch_size):
-            batch = all_rows[i:i + batch_size]
+            batch = all_rows[i : i + batch_size]
             sheet_rate_limiter.wait_if_needed()
             sheet.append_rows(batch)
 
@@ -617,9 +691,15 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
                 non_empty_values = [val for val in row[-3:] if val.strip()]
                 if len(non_empty_values) >= 3:
                     try:
-                        total_invested = float(non_empty_values[0].strip("$").replace(",", ""))
-                        total_current_value = float(non_empty_values[1].strip("$").replace(",", ""))
-                        total_pnl = float(non_empty_values[2].strip("$").replace(",", ""))
+                        total_invested = float(
+                            non_empty_values[0].strip("$").replace(",", "")
+                        )
+                        total_current_value = float(
+                            non_empty_values[1].strip("$").replace(",", "")
+                        )
+                        total_pnl = float(
+                            non_empty_values[2].strip("$").replace(",", "")
+                        )
                     except (ValueError, IndexError) as e:
                         logger.warning(f"Error processing portfolio totals: {e}")
                 continue
@@ -632,8 +712,12 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
                     non_empty_values = [val for val in row[-3:] if val.strip()]
                     if len(non_empty_values) >= 3:
                         try:
-                            invested = float(non_empty_values[0].strip("$").replace(",", ""))
-                            current_val = float(non_empty_values[1].strip("$").replace(",", ""))
+                            invested = float(
+                                non_empty_values[0].strip("$").replace(",", "")
+                            )
+                            current_val = float(
+                                non_empty_values[1].strip("$").replace(",", "")
+                            )
                             pnl = float(non_empty_values[2].strip("$").replace(",", ""))
                             agent_totals[agent_name] = {
                                 "invested": invested,
@@ -641,7 +725,9 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
                                 "pnl": pnl,
                             }
                         except (ValueError, IndexError) as e:
-                            logger.warning(f"Error processing agent totals for {agent_name}: {e}")
+                            logger.warning(
+                                f"Error processing agent totals for {agent_name}: {e}"
+                            )
                 continue
 
             # Process regular trade rows

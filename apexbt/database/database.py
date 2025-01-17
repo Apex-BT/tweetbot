@@ -50,7 +50,8 @@ def init_database(historical=False):
         """
         )
 
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS trades (
             trade_id TEXT PRIMARY KEY,
             ai_agent TEXT,
@@ -79,7 +80,8 @@ def init_database(historical=False):
             market_cap REAL,
             FOREIGN KEY(tweet_id) REFERENCES tweets(tweet_id)
         )
-        """)
+        """
+        )
 
         # Create PNL table with contract_address
         cursor.execute(
@@ -252,6 +254,7 @@ def update_pnl_table(stats, historical=False):
         logger.error(f"Error updating PNL table: {str(e)}")
         raise
 
+
 def save_trade(trade_data, historical=False):
     """Save trade information to the database"""
     try:
@@ -292,7 +295,8 @@ def update_trade_exit(conn, trade_data):
     """Update trade record with exit information"""
     try:
         cursor = conn.cursor()
-        result = cursor.execute("""
+        result = cursor.execute(
+            """
             UPDATE trades
             SET status = 'Closed',
                 exit_price = ?,
@@ -307,31 +311,35 @@ def update_trade_exit(conn, trade_data):
             WHERE ticker = ?
             AND contract_address = ?
             AND status = 'Open'
-        """, (
-            trade_data['exit_price'],
-            trade_data['exit_timestamp'],
-            trade_data['exit_reason'],
-            trade_data['pnl_amount'],
-            trade_data['pnl_percentage'],
-            trade_data['trade_duration'],
-            trade_data['notes'],
-            trade_data['max_drawdown'],
-            trade_data['max_profit'],
-            trade_data['ticker'],
-            trade_data['contract_address']
-        ))
+        """,
+            (
+                trade_data["exit_price"],
+                trade_data["exit_timestamp"],
+                trade_data["exit_reason"],
+                trade_data["pnl_amount"],
+                trade_data["pnl_percentage"],
+                trade_data["trade_duration"],
+                trade_data["notes"],
+                trade_data["max_drawdown"],
+                trade_data["max_profit"],
+                trade_data["ticker"],
+                trade_data["contract_address"],
+            ),
+        )
         conn.commit()
         return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Error in update_trade_exit: {str(e)}")
         return False
 
+
 def get_trade_statistics(historical=False):
     """Get comprehensive trade statistics"""
     with get_db_connection(historical) as conn:
         cursor = conn.cursor()
 
-        return cursor.execute("""
+        return cursor.execute(
+            """
             SELECT
                 COUNT(*) as total_trades,
                 SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed_trades,
@@ -343,14 +351,17 @@ def get_trade_statistics(historical=False):
                 AVG(max_drawdown) as avg_max_drawdown,
                 AVG(max_profit) as avg_max_profit
             FROM trades
-        """).fetchone()
+        """
+        ).fetchone()
+
 
 def get_exit_reason_distribution(historical=False):
     """Get distribution of trade exit reasons"""
     with get_db_connection(historical) as conn:
         cursor = conn.cursor()
 
-        return cursor.execute("""
+        return cursor.execute(
+            """
             SELECT
                 exit_reason,
                 COUNT(*) as count,
@@ -359,4 +370,5 @@ def get_exit_reason_distribution(historical=False):
             FROM trades
             WHERE status = 'Closed'
             GROUP BY exit_reason
-        """).fetchall()
+        """
+        ).fetchall()
