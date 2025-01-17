@@ -50,7 +50,6 @@ def init_database(historical=False):
         """
         )
 
-        # Create trades table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS trades (
             trade_id TEXT PRIMARY KEY,
@@ -77,6 +76,7 @@ def init_database(historical=False):
             trade_duration TEXT,
             max_drawdown REAL,
             max_profit REAL,
+            market_cap REAL,
             FOREIGN KEY(tweet_id) REFERENCES tweets(tweet_id)
         )
         """)
@@ -253,7 +253,7 @@ def update_pnl_table(stats, historical=False):
         raise
 
 def save_trade(trade_data, historical=False):
-    """Save new trade to database"""
+    """Save trade information to the database"""
     try:
         with get_db_connection(historical) as conn:
             cursor = conn.cursor()
@@ -262,8 +262,8 @@ def save_trade(trade_data, historical=False):
                 INSERT INTO trades (
                     trade_id, ai_agent, timestamp, ticker, contract_address,
                     entry_price, position_size, direction, tweet_id,
-                    status, notes, network
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, notes, network, market_cap
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     trade_data["trade_id"],
@@ -277,7 +277,8 @@ def save_trade(trade_data, historical=False):
                     trade_data["tweet_id"],
                     trade_data["status"],
                     trade_data["notes"],
-                    trade_data["network"],  # Add network
+                    trade_data["network"],
+                    trade_data["market_cap"],
                 ),
             )
             conn.commit()

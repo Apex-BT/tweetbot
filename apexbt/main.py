@@ -44,6 +44,8 @@ def process_new_tweet(tweet):
             if dex_data:
                 contract_address = dex_data.get("contract_address")
                 network = dex_data.get("network")
+                market_cap = dex_data.get("market_cap")
+
                 logger.info(
                     f"Found contract {contract_address} on network {network} for {ticker}"
                 )
@@ -61,6 +63,7 @@ def process_new_tweet(tweet):
                         tweet.author,
                         network,
                         entry_timestamp=tweet.created_at,
+                        market_cap=market_cap
                     ):
                         logger.info(
                             f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"

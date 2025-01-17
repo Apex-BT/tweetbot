@@ -174,8 +174,9 @@ def setup_trades_worksheet(sheet):
         "Exit Timestamp",
         "PNL Amount",
         "PNL Percentage",
-        "ATH Price",           # New column
+        "ATH Price",
         "ATH Timestamp",
+        "Market Cap",
         "Notes",
     ]
     update_worksheet_headers(sheet, headers)
@@ -262,6 +263,13 @@ def save_trade(sheet, trade_data, pnl_sheet):
         if "ath_price" in trade_data and trade_data["ath_price"]:
             stop_loss = float(trade_data["ath_price"]) * 0.75  # 25% below ATH
 
+        # Format market cap for display
+        market_cap_display = (
+            f"${trade_data['market_cap']:,.2f}"
+            if 'market_cap' in trade_data and trade_data['market_cap']
+            else "N/A"
+        )
+
         row = [
             trade_data.get("trade_id", ""),
             trade_data.get("ai_agent", ""),
@@ -282,6 +290,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
             str(trade_data.get("pnl_percentage", "")),
             f"${trade_data.get('ath_price', '')}",
             str(trade_data.get("ath_timestamp", "")),
+            market_cap_display,
             trade_data.get("notes", ""),
         ]
 

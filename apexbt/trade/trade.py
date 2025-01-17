@@ -502,6 +502,7 @@ class TradeManager:
             "tweet_id": tweet_id,
             "status": "Open",
             "notes": "Auto trade based on tweet signal",
+            "market_cap": market_cap
         }
 
         # Save to database
