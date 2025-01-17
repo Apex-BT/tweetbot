@@ -42,7 +42,7 @@ class RateLimiter:
             self.available_requests -= 1
             self.last_update = now
 
-class TradingAgent:
+class TradeAgent:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",

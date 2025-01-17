@@ -9,7 +9,7 @@ from apexbt.telegram_bot.telegram import TelegramManager
 from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_USERS
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
-from apexbt.agent.trading_agent import TradingAgent
+from apexbt.agent.agent import TradeAgent
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +31,8 @@ def process_new_tweet(tweet):
             return
 
         # Only reject if we're confident about negative sentiment
-        if not trading_agent.should_take_trade(tweet.text, ticker):
-            logger.info(f"Trade rejected due to negative sentiment")
+        if not trade_agent.should_take_trade(tweet.text, ticker):
+            logger.info("Trade rejected due to negative sentiment")
             return
 
         # Get price data for single ticker
@@ -65,25 +65,6 @@ def process_new_tweet(tweet):
                         logger.info(
                             f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"
                         )
-                        # Send Telegram notification
-                        telegram_manager.send_trade_notification(
-                            ticker,
-                            price_data["contract_address"],
-                            float(price_data["price"]),
-                            tweet.author,
-                            network=network,
-                            market_cap=price_data.get("market_cap")
-                        )
-                        # Send signal to signal bot with logging
-                        logger.info(f"Attempting to send signal for {ticker} to signal bot...")
-                        signal_response = signal_api.send_signal(
-                            token=ticker,
-                            contract=price_data["contract_address"],
-                            entry_price=float(price_data["price"]),
-                            signal_from=tweet.author,
-                            chain=network
-                        )
-                        logger.info(f"Signal API response: {signal_response}")
                 else:
                     logger.warning(f"No price data found from Codex for {ticker}")
             else:
@@ -110,19 +91,21 @@ def save_to_both(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None
 
 def main():
     global trade_manager
-    global sheets
-    global telegram_manager
-    global signal_api
-    global trading_agent
+    global trade_agent
 
     # Initialize components
     init_database()
-    twitter_manager = TwitterManager()
-    trade_manager = TradeManager(update_interval=60)
     sheets = setup_google_sheets()
+
+    twitter_manager = TwitterManager()
+
+    trade_manager = TradeManager(update_interval=60)
     telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     signal_api = SignalAPI()
-    trading_agent = TradingAgent()
+    trade_manager.set_telegram_manager(telegram_manager)
+    trade_manager.set_signal_api(signal_api)
+
+    trade_agent = TradeAgent()
 
     # Verify Twitter credentials
     if not twitter_manager.verify_credentials():

@@ -7,6 +7,7 @@ from typing import List
 from datetime import datetime
 import apexbt.database.database as db
 from apexbt.crypto.codex import Codex
+from config.config import STOP_LOSS_PERCENTAGE
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,8 +44,8 @@ class TradePosition:
             return False
 
     def update_stop_loss(self):
-            """Calculate stop loss as 75% of ATH price (25% below ATH)"""
-            self.stop_loss = self.ath_price * 0.75
+        """Calculate stop loss based on ATH price"""
+        self.stop_loss = self.ath_price * STOP_LOSS_PERCENTAGE
 
     def check_stop_loss(self, current_price: float) -> bool:
             """Check if current price has hit stop loss"""
@@ -61,7 +62,15 @@ class TradeManager:
         self.last_update = 0
         self.MIN_UPDATE_INTERVAL = 2
         self.sheets = None
+        self.telegram_manager = None
+        self.signal_api = None
         self.load_active_trades()
+
+    def set_signal_api(self, signal_api):
+            self.signal_api = signal_api
+
+    def set_telegram_manager(self, telegram_manager):
+        self.telegram_manager = telegram_manager
 
     def load_active_trades(self):
         """Load active trades from database"""
@@ -116,9 +125,13 @@ class TradeManager:
 
             # Track trades that need updating in sheets
             trades_to_update = []
+            trades_to_exit = []  # Track trades that hit stop loss
+
+            # Create copy of active trades to avoid modification during iteration
+            trades_to_process = self.active_trades.copy()
 
             # Process trades by agent
-            for trade in self.active_trades:
+            for trade in trades_to_process:
                 price_data = Codex.get_crypto_price(
                     contract_address=trade.contract_address, network=trade.network
                 )
@@ -129,14 +142,34 @@ class TradeManager:
                     # Check stop loss
                     if trade.check_stop_loss(current_price):
                         logger.warning(
-                            f"🚨 STOP LOSS ALERT: {trade.ticker} has hit stop loss at ${current_price:.8f}"
-                            f" (Stop Loss: ${trade.stop_loss:.8f}, ATH: ${trade.ath_price:.8f})"
+                            f"🚨 STOP LOSS HIT: {trade.ticker} at ${current_price:.8f} "
+                            f"(Stop Loss: ${trade.stop_loss:.8f}, ATH: ${trade.ath_price:.8f})"
                         )
+
+                        # Exit the trade
+                        if self.exit_trade(trade, current_price, "Stop Loss"):
+                            trades_to_exit.append({
+                                'ticker': trade.ticker,
+                                'contract_address': trade.contract_address,
+                                'entry_price': trade.entry_price,
+                                'exit_price': current_price,
+                                'stop_loss': trade.stop_loss,
+                                'ath_price': trade.ath_price,
+                                'pnl_amount': 100 * ((current_price / trade.entry_price) - 1),
+                                'pnl_percentage': ((current_price / trade.entry_price) - 1) * 100,
+                                'ai_agent': trade.ai_agent,
+                                'network': trade.network,
+                                'duration': current_time - trade.entry_timestamp
+                            })
+                            continue  # Skip to next trade since this one is closed
+
+                    # Only process active trades from this point
+                    if trade not in self.active_trades:
+                        continue
 
                     # Check and update ATH if necessary
                     ath_updated = trade.update_ath(current_price, current_time)
                     if ath_updated:
-                        # Update ATH in database
                         self.update_trade_ath_and_stop_loss(
                             trade.ticker,
                             trade.contract_address,
@@ -148,7 +181,6 @@ class TradeManager:
                             f"New ATH for {trade.ticker}: ${trade.ath_price:.8f}, "
                             f"New Stop Loss: ${trade.stop_loss:.8f}"
                         )
-                        # Add to trades that need updating in sheets
                         trades_to_update.append({
                             'ticker': trade.ticker,
                             'contract_address': trade.contract_address,
@@ -157,10 +189,8 @@ class TradeManager:
                             'stop_loss': trade.stop_loss
                         })
 
-                    price_change = (
-                        (current_price - trade.entry_price) / trade.entry_price
-                    ) * 100
-
+                    # Calculate statistics for active trades
+                    price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
                     invested_amount = 100.0
                     current_value = invested_amount * (1 + price_change / 100)
                     pnl = current_value - invested_amount
@@ -178,52 +208,128 @@ class TradeManager:
                     agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
 
                     # Add trade stats
-                    stats.append(
-                        {
-                            "type": "trade",
-                            "ai_agent": trade.ai_agent,
-                            "ticker": trade.ticker,
-                            "entry_time": trade.entry_timestamp.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                            "entry_price": trade.entry_price,
-                            "current_price": current_price,
-                            "ath_price": trade.ath_price,
-                            "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                            "price_change": f"{price_change:.2f}%",
-                            "invested_amount": invested_amount,
-                            "current_value": current_value,
-                            "pnl_dollars": pnl,
-                            "contract_address": trade.contract_address,
-                        }
-                    )
+                    stats.append({
+                        "type": "trade",
+                        "ai_agent": trade.ai_agent,
+                        "ticker": trade.ticker,
+                        "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "entry_price": trade.entry_price,
+                        "current_price": current_price,
+                        "ath_price": trade.ath_price,
+                        "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "price_change": f"{price_change:.2f}%",
+                        "invested_amount": invested_amount,
+                        "current_value": current_value,
+                        "pnl_dollars": pnl,
+                        "contract_address": trade.contract_address,
+                    })
 
-            # Add agent totals
-            for agent, totals in agent_totals.items():
-                stats.append({"type": "agent_total", "agent": agent, **totals})
-                grand_total["invested_amount"] += totals["invested_amount"]
-                grand_total["current_value"] += totals["current_value"]
-                grand_total["pnl_dollars"] += totals["pnl_dollars"]
+                # Send Telegram notifications for exited trades
+                if trades_to_exit:
+                    for trade in trades_to_exit:
+                        self.notify_trade_exit(trade)
 
-            # Add grand total
-            stats.append({"type": "grand_total", **grand_total})
+                # Add agent totals
+                for agent, totals in agent_totals.items():
+                    stats.append({"type": "agent_total", "agent": agent, **totals})
+                    grand_total["invested_amount"] += totals["invested_amount"]
+                    grand_total["current_value"] += totals["current_value"]
+                    grand_total["pnl_dollars"] += totals["pnl_dollars"]
 
-            # Update both database and sheets ONCE after processing all trades
-            self.sync_pnl_updates(stats, sheets)
+                # Add grand total
+                stats.append({"type": "grand_total", **grand_total})
 
-            # Update trades worksheet if needed
-            if trades_to_update and sheets and "trades" in sheets:
-                from apexbt.sheets.sheets import update_trades_worksheet
-                update_trades_worksheet(sheets["trades"], trades_to_update)
-
-            # Update agent summary if sheets available
-            if sheets and "agent_summary" in sheets:
-                from apexbt.sheets.sheets import update_agent_summary
-
-                update_agent_summary(sheets["agent_summary"], stats)
+                # Sync PNL updates
+                self.sync_pnl_updates(stats, sheets)
 
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
+
+    def send_trade_notification(self, ticker: str, contract_address: str, entry_price: float,
+                              ai_agent: str, network: str, market_cap: float = None):
+        """Send notification for new trade via Telegram"""
+        # Skip if historical run
+        if self.historical:
+            return
+
+        try:
+            if self.telegram_manager:
+                # Format market cap to be more readable
+                market_cap_str = ""
+                if market_cap:
+                    if market_cap >= 1_000_000:
+                        market_cap_str = f"${market_cap/1_000_000:.2f}M"
+                    else:
+                        market_cap_str = f"${market_cap:.2f}"
+
+                message = (
+                    f"🟢 NEW TRADE OPENED 🟢\n\n"
+                    f"Token: <code>${ticker}</code>\n"
+                    f"Contract: <code>{contract_address}</code>\n"
+                    f"Entry Price: <code>${entry_price:.8f}</code>\n"
+                    f"Signal From: <code>{ai_agent}</code>\n"
+                    f"Chain: <code>{network.lower()}</code>"
+                )
+
+                if market_cap_str:
+                    message += f"\nMarket Cap: <code>{market_cap_str}</code>"
+
+                self.telegram_manager.send_message(message)
+                logger.info(f"Trade notification sent for {ticker}")
+        except Exception as e:
+            logger.error(f"Error sending trade notification: {str(e)}")
+
+    def notify_trade_exit(self, trade_data):
+        """Send notification for trade exit via Telegram"""
+        if self.historical:
+                return
+
+        try:
+            duration_str = str(trade_data['duration']).split('.')[0]  # Remove microseconds
+            message = (
+                f"🔴 TRADE CLOSED - STOP LOSS HIT 🔴\n\n"
+                f"Token: <code>${trade_data['ticker']}</code>\n"
+                f"Contract: <code>{trade_data['contract_address']}</code>\n"
+                f"Entry Price: <code>${trade_data['entry_price']:.8f}</code>\n"
+                f"Exit Price: <code>${trade_data['exit_price']:.8f}</code>\n"
+                f"ATH Price: <code>${trade_data['ath_price']:.8f}</code>\n"
+                f"Stop Loss: <code>${trade_data['stop_loss']:.8f}</code>\n"
+                f"PNL: <code>${trade_data['pnl_amount']:.2f} ({trade_data['pnl_percentage']:.2f}%)</code>\n"
+                f"Duration: <code>{duration_str}</code>\n"
+                f"Signal From: <code>{trade_data['ai_agent']}</code>\n"
+                f"Chain: <code>{trade_data['network'].lower()}</code>"
+            )
+
+            if hasattr(self, 'telegram_manager'):
+                self.telegram_manager.send_message(message)
+
+        except Exception as e:
+            logger.error(f"Error sending trade exit notification: {str(e)}")
+
+    def send_trade_signal(self, ticker: str, contract_address: str,
+                         entry_price: float, signal_from: str, network: str):
+        """Send trade signal to signal bot"""
+        if self.historical:
+                return
+
+        try:
+            if self.signal_api:
+                logger.info(f"Sending signal for {ticker} to signal bot...")
+                signal_response = self.signal_api.send_signal(
+                    token=ticker,
+                    contract=contract_address,
+                    entry_price=entry_price,
+                    signal_from=signal_from,
+                    chain=network
+                )
+                logger.info(f"Signal API response: {signal_response}")
+                return signal_response
+            else:
+                logger.warning("Signal API not configured")
+                return None
+        except Exception as e:
+            logger.error(f"Error sending trade signal: {str(e)}")
+            return None
 
     def update_trade_ath_and_stop_loss(self, ticker: str, contract_address: str,
                                       ath_price: float, ath_timestamp: datetime,
@@ -276,7 +382,7 @@ class TradeManager:
             if position["type"] == "trade":
                 current_price = position['current_price']
                 ath_price = position['ath_price']
-                stop_loss = ath_price * 0.75  # 25% below ATH
+                stop_loss = ath_price * STOP_LOSS_PERCENTAGE
                 from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
                 to_stop_loss = ((current_price - stop_loss) / current_price * 100)
 
@@ -362,19 +468,23 @@ class TradeManager:
         ai_agent: str,
         network: str = "ethereum",
         entry_timestamp: datetime = None,
+        market_cap: float = None
     ) -> bool:
-        """Add a new trade to both database and sheets"""
+        """Add a new trade, send notification and signal"""
         if self.has_open_trade(ticker):
             logger.warning(f"Trade for {ticker} already exists - skipping")
             return False
 
         if entry_timestamp is None:
-            entry_timestamp = datetime.now()
+                entry_timestamp = datetime.now()
+
+        # Ensure timestamp is timezone-naive
+        entry_timestamp = entry_timestamp.replace(tzinfo=None)
 
         # Initialize ATH with entry price
         ath_price = entry_price
         ath_timestamp = entry_timestamp
-        stop_loss = ath_price * 0.75  # 25% below ATH
+        stop_loss = ath_price * STOP_LOSS_PERCENTAGE
 
         trade_data = {
             "trade_id": f"T{entry_timestamp.strftime('%Y%m%d%H%M%S%f')}",
@@ -397,15 +507,13 @@ class TradeManager:
         # Save to database
         success = db.save_trade(trade_data, self.historical)
 
-        # Save to sheets if available
-        if success and self.sheets and "trades" in self.sheets:
-            from apexbt.sheets.sheets import save_trade as save_trade_to_sheets
-
-            save_trade_to_sheets(
-                self.sheets["trades"], trade_data, self.sheets.get("pnl")
-            )
-
         if success:
+            # Save to sheets if available
+            if self.sheets and "trades" in self.sheets:
+                from apexbt.sheets.sheets import save_trade as save_trade_to_sheets
+                save_trade_to_sheets(self.sheets["trades"], trade_data, self.sheets.get("pnl"))
+
+            # Add to active trades
             self.active_trades.append(
                 TradePosition(
                     ticker=ticker,
@@ -418,4 +526,80 @@ class TradeManager:
                 )
             )
 
+            # Only send notifications and signals if not historical
+            if not self.historical:
+                # Send notification for new trade
+                self.send_trade_notification(
+                    ticker=ticker,
+                    contract_address=contract_address,
+                    entry_price=entry_price,
+                    ai_agent=ai_agent,
+                    network=network,
+                    market_cap=market_cap
+                )
+
+                # Send signal to signal bot
+                self.send_trade_signal(
+                    ticker=ticker,
+                    contract_address=contract_address,
+                    entry_price=entry_price,
+                    signal_from=ai_agent,
+                    network=network
+                )
+
         return success
+
+    def exit_trade(self, trade: TradePosition, exit_price: float, exit_reason: str = "Stop Loss") -> bool:
+        """
+        Exit a trade with enhanced tracking of exit statistics
+        """
+        try:
+            # Ensure both datetimes are timezone-naive
+            exit_timestamp = datetime.now().replace(tzinfo=None)
+            entry_timestamp = trade.entry_timestamp
+            if entry_timestamp.tzinfo:
+                entry_timestamp = entry_timestamp.replace(tzinfo=None)
+
+            # Calculate trade duration with consistent timezone-naive datetimes
+            trade_duration = exit_timestamp - entry_timestamp
+
+            # Rest of the code remains the same
+            pnl_amount = 100 * ((exit_price / trade.entry_price) - 1)
+            pnl_percentage = ((exit_price / trade.entry_price) - 1) * 100
+
+            max_drawdown = ((trade.ath_price - min(trade.ath_price, exit_price)) / trade.ath_price) * 100
+            max_profit = ((trade.ath_price - trade.entry_price) / trade.entry_price) * 100
+
+            trade_data = {
+                'exit_price': exit_price,
+                'exit_timestamp': exit_timestamp,
+                'exit_reason': exit_reason,
+                'pnl_amount': pnl_amount,
+                'pnl_percentage': pnl_percentage,
+                'trade_duration': str(trade_duration),
+                'notes': f"Trade closed due to {exit_reason}",
+                'max_drawdown': max_drawdown,
+                'max_profit': max_profit,
+                'ticker': trade.ticker,
+                'contract_address': trade.contract_address
+            }
+
+            # Update database with comprehensive exit information
+            with db.get_db_connection(self.historical) as conn:
+                db.update_trade_exit(conn, trade_data)
+
+            # Remove from active trades list
+            self.active_trades = [t for t in self.active_trades
+                                if t.contract_address != trade.contract_address]
+
+            logger.info(
+                f"Exited trade for {trade.ticker} at ${exit_price:.8f}. "
+                f"PNL: ${pnl_amount:.2f} ({pnl_percentage:.2f}%). "
+                f"Reason: {exit_reason}. Duration: {trade_duration}"
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error exiting trade: {str(e)}")
+            return False

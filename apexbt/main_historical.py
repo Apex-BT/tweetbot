@@ -8,7 +8,7 @@ from apexbt.utils.sample_tweets import sample_tweets
 from apexbt.sheets.sheets import setup_google_sheets, save_tweet as save_tweet_to_sheets
 import time
 import logging
-from config.config import TWITTER_USERS
+from config.config import TWITTER_USERS, TRADE_UPDATE_INTERVAL_SECONDS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -117,7 +117,7 @@ def process_sample_tweets(sheets=None):
 
     logger.info(f"Number of sample tweets: {len(sample_tweets)}")
     # Create trade manager here
-    trade_manager = TradeManager()
+    trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS)
     trade_manager.start_monitoring()
 
     logger.info(f"Number of sample tweets: {len(sample_tweets)}")
@@ -150,7 +150,7 @@ def run_historical_analysis(start_date=None, sheets=None):
         if not sheets:
             sheets = setup_google_sheets(historical=True)
 
-        trade_manager = TradeManager(update_interval=180, historical=True)
+        trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS, historical=True)
         trade_manager.start_monitoring(sheets)
 
         for i, username in enumerate(TWITTER_USERS, 1):
@@ -219,11 +219,11 @@ if __name__ == "__main__":
     # process_sample_tweets(sheets)
 
     # 2. Historical analysis
-    start_date = datetime(2025, 1, 9, tzinfo=timezone.utc)
+    start_date = datetime(2025, 1, 16, tzinfo=timezone.utc)
     run_historical_analysis(start_date, sheets)
 
     # 3. Just monitor existing historical trades
-    # trade_manager = TradeManager(update_interval=60, historical=True)
+    # trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS, historical=True)
     # trade_manager.start_monitoring(sheets)
     # try:
     #     while True:
