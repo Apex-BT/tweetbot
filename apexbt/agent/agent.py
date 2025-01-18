@@ -9,11 +9,13 @@ from threading import Lock
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class SentimentAnalysis:
     is_positive: bool
     confidence: float
     reasoning: str
+
 
 class RateLimiter:
     def __init__(self, requests_per_minute):
@@ -29,26 +31,30 @@ class RateLimiter:
 
             # Replenish available requests based on time passed
             self.available_requests = min(
-                self.available_requests + (time_passed * (self.requests_per_minute / 60)),
-                self.requests_per_minute
+                self.available_requests
+                + (time_passed * (self.requests_per_minute / 60)),
+                self.requests_per_minute,
             )
 
             if self.available_requests < 1:
                 # Calculate sleep time needed to get 1 request
-                sleep_time = (1 - self.available_requests) * (60 / self.requests_per_minute)
+                sleep_time = (1 - self.available_requests) * (
+                    60 / self.requests_per_minute
+                )
                 time.sleep(sleep_time)
                 self.available_requests = 1
 
             self.available_requests -= 1
             self.last_update = now
 
-class TradingAgent:
+
+class TradeAgent:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
             google_api_key=GOOGLE_API_KEY,
             temperature=0,
-            max_output_tokens=150
+            max_output_tokens=150,
         )
 
         # Initialize rate limiter for 15 requests per minute
@@ -78,19 +84,15 @@ class TradingAgent:
     def analyze_sentiment(self, tweet_text: str, token: str) -> SentimentAnalysis:
         try:
             # Acquire rate limit token before making the API call
-            self.rate_limiter.acquire()
+            self.request_rate_limiter.acquire()
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", self.system_prompt),
-                ("human", self.prompt_template)
-            ])
+            prompt = ChatPromptTemplate.from_messages(
+                [("system", self.system_prompt), ("human", self.prompt_template)]
+            )
 
             chain = prompt | self.llm
 
-            response = chain.invoke({
-                "tweet_text": tweet_text,
-                "token": token
-            })
+            response = chain.invoke({"tweet_text": tweet_text, "token": token})
 
             try:
                 sentiment, confidence, reasoning = response.content.strip().split("|")
@@ -99,7 +101,7 @@ class TradingAgent:
                 analysis = SentimentAnalysis(
                     is_positive=(sentiment.strip().upper() == "POSITIVE"),
                     confidence=min(max(confidence, 0.0), 1.0),  # Clamp between 0 and 1
-                    reasoning=reasoning.strip()
+                    reasoning=reasoning.strip(),
                 )
 
                 logger.info(
@@ -117,7 +119,7 @@ class TradingAgent:
                 return SentimentAnalysis(
                     is_positive=True,  # Default to positive if parsing fails
                     confidence=0.0,
-                    reasoning=f"Error parsing response: {response.content}"
+                    reasoning=f"Error parsing response: {response.content}",
                 )
 
         except Exception as e:
@@ -125,7 +127,7 @@ class TradingAgent:
             return SentimentAnalysis(
                 is_positive=True,  # Default to positive
                 confidence=0.0,
-                reasoning=f"Error in analysis: {str(e)}"
+                reasoning=f"Error in analysis: {str(e)}",
             )
 
     def should_take_trade(self, tweet_text: str, token: str) -> bool:
@@ -138,7 +140,9 @@ class TradingAgent:
         should_reject = not analysis.is_positive and analysis.confidence > 0.7
 
         if should_reject:
-            logger.info(f"Trade rejected due to negative sentiment: {analysis.reasoning}")
+            logger.info(
+                f"Trade rejected due to negative sentiment: {analysis.reasoning}"
+            )
             return False
 
         return True  # Accept all other cases
