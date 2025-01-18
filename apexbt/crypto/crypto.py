@@ -46,10 +46,10 @@ def get_crypto_price_dexscreener(ticker):
             sorted_pairs = sorted(
                 matching_pairs,
                 key=lambda x: (
+                    float(x.get("volume", {}).get("h24", 0) or 0),
                     float(
                         x.get("liquidity", {}).get("usd", 0) or 0
-                    ),  # Prioritize liquidity
-                    float(x.get("volume", {}).get("h24", 0) or 0),  # Then volume
+                    ),
                 ),
                 reverse=True,
             )
