@@ -10,6 +10,7 @@ from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_U
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
+from config.config import TRADE_UPDATE_INTERVAL_SECONDS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +104,7 @@ def main():
 
     twitter_manager = TwitterManager()
 
-    trade_manager = TradeManager(update_interval=60)
+    trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS)
     telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     signal_api = SignalAPI()
     trade_manager.set_telegram_manager(telegram_manager)

@@ -636,6 +636,18 @@ class TradeManager:
                 (trade.ath_price - trade.entry_price) / trade.entry_price
             ) * 100
 
+            # Send sell signal if not in historical mode
+            if not self.historical and self.signal_api:
+                self.signal_api.send_signal(
+                    token=trade.ticker,
+                    contract=trade.contract_address,
+                    entry_price=exit_price,
+                    signal_from=trade.ai_agent,
+                    chain=trade.network,
+                    tx_type="sell"
+                )
+                logger.info(f"Sent sell signal for {trade.ticker}")
+
             trade_data = {
                 "exit_price": exit_price,
                 "exit_timestamp": exit_timestamp,
