@@ -125,12 +125,14 @@ class TradeManager:
 
             # Track trades that need updating in sheets
             trades_to_update = []
-            trades_to_exit = []  # Track trades that hit stop loss
+            trades_to_exit = []
 
-            # Create copy of active trades to avoid modification during iteration
+            # Get closed trades first
+            closed_trades = db.load_closed_trades(self.historical)
+
+            # Process all active trades first before any updates
             trades_to_process = self.active_trades.copy()
 
-            # Process trades by agent
             for trade in trades_to_process:
                 price_data = Codex.get_crypto_price(
                     contract_address=trade.contract_address, network=trade.network
@@ -141,69 +143,55 @@ class TradeManager:
 
                     # Check stop loss
                     if trade.check_stop_loss(current_price):
-                        logger.warning(
-                            f"🚨 STOP LOSS HIT: {trade.ticker} at ${current_price:.8f} "
-                            f"(Stop Loss: ${trade.stop_loss:.8f}, ATH: ${trade.ath_price:.8f})"
-                        )
-
-                        # Exit the trade
-                        if self.exit_trade(trade, current_price, "Stop Loss"):
-                            trades_to_exit.append(
-                                {
-                                    "ticker": trade.ticker,
-                                    "contract_address": trade.contract_address,
-                                    "entry_price": trade.entry_price,
-                                    "exit_price": current_price,
-                                    "stop_loss": trade.stop_loss,
-                                    "ath_price": trade.ath_price,
-                                    "pnl_amount": 100
-                                    * ((current_price / trade.entry_price) - 1),
-                                    "pnl_percentage": (
-                                        (current_price / trade.entry_price) - 1
-                                    )
-                                    * 100,
-                                    "ai_agent": trade.ai_agent,
-                                    "network": trade.network,
-                                    "duration": current_time - trade.entry_timestamp,
-                                }
-                            )
-                            continue  # Skip to next trade since this one is closed
-
-                    # Only process active trades from this point
-                    if trade not in self.active_trades:
+                        trades_to_exit.append({
+                            "ticker": trade.ticker,
+                            "contract_address": trade.contract_address,
+                            "entry_price": trade.entry_price,
+                            "exit_price": current_price,
+                            "stop_loss": trade.stop_loss,
+                            "ath_price": trade.ath_price,
+                            "pnl_amount": 100 * ((current_price / trade.entry_price) - 1),
+                            "pnl_percentage": ((current_price / trade.entry_price) - 1) * 100,
+                            "ai_agent": trade.ai_agent,
+                            "network": trade.network,
+                            "duration": current_time - trade.entry_timestamp,
+                        })
                         continue
 
                     # Check and update ATH if necessary
                     ath_updated = trade.update_ath(current_price, current_time)
                     if ath_updated:
-                        self.update_trade_ath_and_stop_loss(
-                            trade.ticker,
-                            trade.contract_address,
-                            trade.ath_price,
-                            trade.ath_timestamp,
-                            trade.stop_loss,
-                        )
-                        logger.info(
-                            f"New ATH for {trade.ticker}: ${trade.ath_price:.8f}, "
-                            f"New Stop Loss: ${trade.stop_loss:.8f}"
-                        )
-                        trades_to_update.append(
-                            {
-                                "ticker": trade.ticker,
-                                "contract_address": trade.contract_address,
-                                "ath_price": trade.ath_price,
-                                "ath_timestamp": trade.ath_timestamp,
-                                "stop_loss": trade.stop_loss,
-                            }
-                        )
+                        trades_to_update.append({
+                            "ticker": trade.ticker,
+                            "contract_address": trade.contract_address,
+                            "ath_price": trade.ath_price,
+                            "ath_timestamp": trade.ath_timestamp,
+                            "stop_loss": trade.stop_loss,
+                        })
 
-                    # Calculate statistics for active trades
-                    price_change = (
-                        (current_price - trade.entry_price) / trade.entry_price
-                    ) * 100
+                    # Calculate statistics
+                    price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
                     invested_amount = 100.0
                     current_value = invested_amount * (1 + price_change / 100)
                     pnl = current_value - invested_amount
+
+                    # Add trade stats
+                    stats.append({
+                        "type": "trade",
+                        "ai_agent": trade.ai_agent,
+                        "ticker": trade.ticker,
+                        "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "entry_price": trade.entry_price,
+                        "current_price": current_price,
+                        "ath_price": trade.ath_price,
+                        "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "price_change": f"{price_change:.2f}%",
+                        "invested_amount": invested_amount,
+                        "current_value": current_value,
+                        "pnl_dollars": pnl,
+                        "contract_address": trade.contract_address,
+                        "status": "Open"
+                    })
 
                     # Update agent totals
                     if trade.ai_agent not in agent_totals:
@@ -212,54 +200,62 @@ class TradeManager:
                             "current_value": 0,
                             "pnl_dollars": 0,
                         }
-
                     agent_totals[trade.ai_agent]["invested_amount"] += invested_amount
                     agent_totals[trade.ai_agent]["current_value"] += current_value
                     agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
 
-                    # Add trade stats
-                    stats.append(
-                        {
-                            "type": "trade",
-                            "ai_agent": trade.ai_agent,
-                            "ticker": trade.ticker,
-                            "entry_time": trade.entry_timestamp.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                            "entry_price": trade.entry_price,
-                            "current_price": current_price,
-                            "ath_price": trade.ath_price,
-                            "ath_timestamp": trade.ath_timestamp.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                            "price_change": f"{price_change:.2f}%",
-                            "invested_amount": invested_amount,
-                            "current_value": current_value,
-                            "pnl_dollars": pnl,
-                            "contract_address": trade.contract_address,
-                        }
-                    )
+            # Add closed trades to stats
+            stats.extend(closed_trades)
 
-                # Send Telegram notifications for exited trades
-                if trades_to_exit:
-                    for trade in trades_to_exit:
-                        self.notify_trade_exit(trade)
+            # Update agent totals with closed trades
+            for trade in closed_trades:
+                agent = trade["ai_agent"]
+                if agent not in agent_totals:
+                    agent_totals[agent] = {
+                        "invested_amount": 0,
+                        "current_value": 0,
+                        "pnl_dollars": 0,
+                    }
+                agent_totals[agent]["invested_amount"] += trade["invested_amount"]
+                agent_totals[agent]["current_value"] += trade["current_value"]
+                agent_totals[agent]["pnl_dollars"] += trade["pnl_dollars"]
 
-                # Add agent totals
-                for agent, totals in agent_totals.items():
-                    stats.append({"type": "agent_total", "agent": agent, **totals})
-                    grand_total["invested_amount"] += totals["invested_amount"]
-                    grand_total["current_value"] += totals["current_value"]
-                    grand_total["pnl_dollars"] += totals["pnl_dollars"]
+            # Process any trades that need to be exited
+            for trade in trades_to_exit:
+                self.exit_trade(
+                    next(t for t in trades_to_process if t.ticker == trade["ticker"]),
+                    trade["exit_price"],
+                    "Stop Loss"
+                )
+                self.notify_trade_exit(trade)
 
-                # Add grand total
-                stats.append({"type": "grand_total", **grand_total})
+            # Add agent totals to stats
+            for agent, totals in agent_totals.items():
+                stats.append({"type": "agent_total", "agent": agent, **totals})
+                grand_total["invested_amount"] += totals["invested_amount"]
+                grand_total["current_value"] += totals["current_value"]
+                grand_total["pnl_dollars"] += totals["pnl_dollars"]
 
-                # Sync PNL updates
-                self.sync_pnl_updates(stats, sheets)
+            # Add grand total
+            stats.append({"type": "grand_total", **grand_total})
+
+            # Single update to PNL
+            self.sync_pnl_updates(stats, sheets)
+
+            # Update trades worksheet if needed
+            if trades_to_update and self.sheets and "trades" in self.sheets:
+                from apexbt.sheets.sheets import update_trades_worksheet
+                update_trades_worksheet(self.sheets["trades"], trades_to_update)
+
+             # Update agent summary if sheets available
+            if sheets and "agent_summary" in sheets:
+                from apexbt.sheets.sheets import update_agent_summary
+
+                update_agent_summary(sheets["agent_summary"], stats)
 
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
+            logger.exception("Full traceback:")
 
     def send_trade_notification(
         self,
@@ -640,6 +636,19 @@ class TradeManager:
             # Update database with comprehensive exit information
             with db.get_db_connection(self.historical) as conn:
                 db.update_trade_exit(conn, trade_data)
+
+            if self.sheets and "trades" in self.sheets:
+                exit_data = {
+                    "ticker": trade.ticker,
+                    "contract_address": trade.contract_address,
+                    "exit_price": exit_price,
+                    "exit_timestamp": exit_timestamp,
+                    "exit_reason": exit_reason,
+                    "pnl_amount": pnl_amount,
+                    "pnl_percentage": pnl_percentage
+                }
+                from apexbt.sheets.sheets import update_trade_exit
+                update_trade_exit(self.sheets["trades"], exit_data)
 
             # Remove from active trades list
             self.active_trades = [
