@@ -84,7 +84,7 @@ class TradeAgent:
     def analyze_sentiment(self, tweet_text: str, token: str) -> SentimentAnalysis:
         try:
             # Acquire rate limit token before making the API call
-            self.rate_limiter.acquire()
+            self.request_rate_limiter.acquire()
 
             prompt = ChatPromptTemplate.from_messages(
                 [("system", self.system_prompt), ("human", self.prompt_template)]

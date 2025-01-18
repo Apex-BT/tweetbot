@@ -10,7 +10,11 @@ from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_U
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
-from config.config import TRADE_UPDATE_INTERVAL_SECONDS
+from config.config import (
+    TRADE_UPDATE_INTERVAL_SECONDS,
+    SIGNAL_API_USERNAME,
+    SIGNAL_API_PASSWORD,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -97,6 +101,7 @@ def save_to_both(tweet, ticker, ticker_status, price_data, ai_agent, sheets=None
 def main():
     global trade_manager
     global trade_agent
+    global sheets
 
     # Initialize components
     init_database()
@@ -106,6 +111,7 @@ def main():
 
     trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS)
     telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    SignalAPI.initialize(SIGNAL_API_USERNAME, SIGNAL_API_PASSWORD)
     signal_api = SignalAPI()
     trade_manager.set_telegram_manager(telegram_manager)
     trade_manager.set_signal_api(signal_api)

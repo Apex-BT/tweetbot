@@ -284,7 +284,6 @@ class TradeManager:
         market_cap: float = None,
     ):
         """Send notification for new trade via Telegram"""
-        # Skip if historical run
         if self.historical:
             return
 
@@ -299,16 +298,15 @@ class TradeManager:
                         market_cap_str = f"${market_cap:.2f}"
 
                 message = (
-                    f"🟢 NEW TRADE OPENED 🟢\n\n"
+                    f"🔥 New signal just dropped 💥\n\n"
                     f"Token: <code>${ticker}</code>\n"
-                    f"Contract: <code>{contract_address}</code>\n"
-                    f"Entry Price: <code>${entry_price:.8f}</code>\n"
-                    f"Signal From: <code>{ai_agent}</code>\n"
-                    f"Chain: <code>{network.lower()}</code>"
+                    f"Chain: <code>{network.lower()}</code>\n"
+                    f"CA: <code>{contract_address}</code>\n"
+                    f"Current price: <code>${entry_price:.8f}</code>"
                 )
 
                 if market_cap_str:
-                    message += f"\nMarket Cap: <code>{market_cap_str}</code>"
+                    message += f"\nCurrent MC: <code>{market_cap_str}</code>"
 
                 self.telegram_manager.send_message(message)
                 logger.info(f"Trade notification sent for {ticker}")
@@ -325,17 +323,13 @@ class TradeManager:
                 0
             ]  # Remove microseconds
             message = (
-                f"🔴 TRADE CLOSED - STOP LOSS HIT 🔴\n\n"
+                f"💀 Position Closed 💀\n\n"
                 f"Token: <code>${trade_data['ticker']}</code>\n"
-                f"Contract: <code>{trade_data['contract_address']}</code>\n"
-                f"Entry Price: <code>${trade_data['entry_price']:.8f}</code>\n"
-                f"Exit Price: <code>${trade_data['exit_price']:.8f}</code>\n"
-                f"ATH Price: <code>${trade_data['ath_price']:.8f}</code>\n"
-                f"Stop Loss: <code>${trade_data['stop_loss']:.8f}</code>\n"
-                f"PNL: <code>${trade_data['pnl_amount']:.2f} ({trade_data['pnl_percentage']:.2f}%)</code>\n"
-                f"Duration: <code>{duration_str}</code>\n"
-                f"Signal From: <code>{trade_data['ai_agent']}</code>\n"
-                f"Chain: <code>{trade_data['network'].lower()}</code>"
+                f"Chain: <code>{trade_data['network'].lower()}</code>\n"
+                f"CA: <code>{trade_data['contract_address']}</code>\n"
+                f"Exit price: <code>${trade_data['exit_price']:.8f}</code>\n"
+                f"PNL: <code>{trade_data['pnl_percentage']:.2f}%</code>\n"
+                f"Duration: <code>{duration_str}</code>"
             )
 
             if hasattr(self, "telegram_manager"):
@@ -644,7 +638,7 @@ class TradeManager:
                     entry_price=exit_price,
                     signal_from=trade.ai_agent,
                     chain=trade.network,
-                    tx_type="sell"
+                    tx_type="sell",
                 )
                 logger.info(f"Sent sell signal for {trade.ticker}")
 
