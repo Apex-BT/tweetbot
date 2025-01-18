@@ -243,7 +243,6 @@ class TradeManager:
                     trade["exit_price"],
                     "Stop Loss",
                 )
-                self.notify_trade_exit(trade)
 
             # Add agent totals to stats
             for agent, totals in agent_totals.items():
@@ -580,18 +579,8 @@ class TradeManager:
                 )
             )
 
-            # Only send notifications and signals if not historical
+            # Only send signals if not historical
             if not self.historical:
-                # Send notification for new trade
-                self.send_trade_notification(
-                    ticker=ticker,
-                    contract_address=contract_address,
-                    entry_price=entry_price,
-                    ai_agent=ai_agent,
-                    network=network,
-                    market_cap=market_cap,
-                )
-
                 # Send signal to signal bot
                 self.send_trade_signal(
                     ticker=ticker,
