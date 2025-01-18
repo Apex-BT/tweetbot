@@ -373,6 +373,7 @@ def get_exit_reason_distribution(historical=False):
         """
         ).fetchall()
 
+
 def load_closed_trades(historical=False):
     """Load closed trades from database"""
     try:
@@ -412,26 +413,35 @@ def load_closed_trades(historical=False):
                         trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S"
                     )
 
-                closed_trades.append({
-                    "type": "trade",
-                    "ai_agent": trade["ai_agent"],
-                    "ticker": trade["ticker"],
-                    "contract_address": trade["contract_address"],
-                    "network": trade["network"],
-                    "entry_time": entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                    "entry_price": float(trade["entry_price"]),
-                    "current_price": float(trade["exit_price"]),  # Use exit price as current
-                    "ath_price": float(trade["ath_price"]) if trade["ath_price"] else float(trade["exit_price"]),
-                    "ath_timestamp": trade["ath_timestamp"],
-                    "price_change": f"{trade['pnl_percentage']:.2f}%",
-                    "invested_amount": 100.0,  # Standard position size
-                    "current_value": 100.0 * (1 + float(trade["pnl_percentage"]) / 100),
-                    "pnl_dollars": float(trade["pnl_amount"]),
-                    "status": "Closed",
-                    "exit_price": float(trade["exit_price"]),
-                    "exit_timestamp": exit_timestamp,
-                    "exit_reason": trade["exit_reason"]
-                })
+                closed_trades.append(
+                    {
+                        "type": "trade",
+                        "ai_agent": trade["ai_agent"],
+                        "ticker": trade["ticker"],
+                        "contract_address": trade["contract_address"],
+                        "network": trade["network"],
+                        "entry_time": entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "entry_price": float(trade["entry_price"]),
+                        "current_price": float(
+                            trade["exit_price"]
+                        ),  # Use exit price as current
+                        "ath_price": (
+                            float(trade["ath_price"])
+                            if trade["ath_price"]
+                            else float(trade["exit_price"])
+                        ),
+                        "ath_timestamp": trade["ath_timestamp"],
+                        "price_change": f"{trade['pnl_percentage']:.2f}%",
+                        "invested_amount": 100.0,  # Standard position size
+                        "current_value": 100.0
+                        * (1 + float(trade["pnl_percentage"]) / 100),
+                        "pnl_dollars": float(trade["pnl_amount"]),
+                        "status": "Closed",
+                        "exit_price": float(trade["exit_price"]),
+                        "exit_timestamp": exit_timestamp,
+                        "exit_reason": trade["exit_reason"],
+                    }
+                )
 
             return closed_trades
 

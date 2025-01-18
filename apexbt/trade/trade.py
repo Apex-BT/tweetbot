@@ -143,55 +143,71 @@ class TradeManager:
 
                     # Check stop loss
                     if trade.check_stop_loss(current_price):
-                        trades_to_exit.append({
-                            "ticker": trade.ticker,
-                            "contract_address": trade.contract_address,
-                            "entry_price": trade.entry_price,
-                            "exit_price": current_price,
-                            "stop_loss": trade.stop_loss,
-                            "ath_price": trade.ath_price,
-                            "pnl_amount": 100 * ((current_price / trade.entry_price) - 1),
-                            "pnl_percentage": ((current_price / trade.entry_price) - 1) * 100,
-                            "ai_agent": trade.ai_agent,
-                            "network": trade.network,
-                            "duration": current_time - trade.entry_timestamp,
-                        })
+                        trades_to_exit.append(
+                            {
+                                "ticker": trade.ticker,
+                                "contract_address": trade.contract_address,
+                                "entry_price": trade.entry_price,
+                                "exit_price": current_price,
+                                "stop_loss": trade.stop_loss,
+                                "ath_price": trade.ath_price,
+                                "pnl_amount": 100
+                                * ((current_price / trade.entry_price) - 1),
+                                "pnl_percentage": (
+                                    (current_price / trade.entry_price) - 1
+                                )
+                                * 100,
+                                "ai_agent": trade.ai_agent,
+                                "network": trade.network,
+                                "duration": current_time - trade.entry_timestamp,
+                            }
+                        )
                         continue
 
                     # Check and update ATH if necessary
                     ath_updated = trade.update_ath(current_price, current_time)
                     if ath_updated:
-                        trades_to_update.append({
-                            "ticker": trade.ticker,
-                            "contract_address": trade.contract_address,
-                            "ath_price": trade.ath_price,
-                            "ath_timestamp": trade.ath_timestamp,
-                            "stop_loss": trade.stop_loss,
-                        })
+                        trades_to_update.append(
+                            {
+                                "ticker": trade.ticker,
+                                "contract_address": trade.contract_address,
+                                "ath_price": trade.ath_price,
+                                "ath_timestamp": trade.ath_timestamp,
+                                "stop_loss": trade.stop_loss,
+                            }
+                        )
 
                     # Calculate statistics
-                    price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
+                    price_change = (
+                        (current_price - trade.entry_price) / trade.entry_price
+                    ) * 100
                     invested_amount = 100.0
                     current_value = invested_amount * (1 + price_change / 100)
                     pnl = current_value - invested_amount
 
                     # Add trade stats
-                    stats.append({
-                        "type": "trade",
-                        "ai_agent": trade.ai_agent,
-                        "ticker": trade.ticker,
-                        "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                        "entry_price": trade.entry_price,
-                        "current_price": current_price,
-                        "ath_price": trade.ath_price,
-                        "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                        "price_change": f"{price_change:.2f}%",
-                        "invested_amount": invested_amount,
-                        "current_value": current_value,
-                        "pnl_dollars": pnl,
-                        "contract_address": trade.contract_address,
-                        "status": "Open"
-                    })
+                    stats.append(
+                        {
+                            "type": "trade",
+                            "ai_agent": trade.ai_agent,
+                            "ticker": trade.ticker,
+                            "entry_time": trade.entry_timestamp.strftime(
+                                "%Y-%m-%d %H:%M:%S"
+                            ),
+                            "entry_price": trade.entry_price,
+                            "current_price": current_price,
+                            "ath_price": trade.ath_price,
+                            "ath_timestamp": trade.ath_timestamp.strftime(
+                                "%Y-%m-%d %H:%M:%S"
+                            ),
+                            "price_change": f"{price_change:.2f}%",
+                            "invested_amount": invested_amount,
+                            "current_value": current_value,
+                            "pnl_dollars": pnl,
+                            "contract_address": trade.contract_address,
+                            "status": "Open",
+                        }
+                    )
 
                     # Update agent totals
                     if trade.ai_agent not in agent_totals:
@@ -225,7 +241,7 @@ class TradeManager:
                 self.exit_trade(
                     next(t for t in trades_to_process if t.ticker == trade["ticker"]),
                     trade["exit_price"],
-                    "Stop Loss"
+                    "Stop Loss",
                 )
                 self.notify_trade_exit(trade)
 
@@ -245,9 +261,10 @@ class TradeManager:
             # Update trades worksheet if needed
             if trades_to_update and self.sheets and "trades" in self.sheets:
                 from apexbt.sheets.sheets import update_trades_worksheet
+
                 update_trades_worksheet(self.sheets["trades"], trades_to_update)
 
-             # Update agent summary if sheets available
+            # Update agent summary if sheets available
             if sheets and "agent_summary" in sheets:
                 from apexbt.sheets.sheets import update_agent_summary
 
@@ -645,9 +662,10 @@ class TradeManager:
                     "exit_timestamp": exit_timestamp,
                     "exit_reason": exit_reason,
                     "pnl_amount": pnl_amount,
-                    "pnl_percentage": pnl_percentage
+                    "pnl_percentage": pnl_percentage,
                 }
                 from apexbt.sheets.sheets import update_trade_exit
+
                 update_trade_exit(self.sheets["trades"], exit_data)
 
             # Remove from active trades list

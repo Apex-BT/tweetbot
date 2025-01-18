@@ -224,7 +224,7 @@ def setup_agent_summary_worksheet(sheet):
         "Open Win Rate (%)",
         "Best Trade",
         "Worst Trade",
-        "Last Updated"
+        "Last Updated",
     ]
     update_worksheet_headers(sheet, headers)
 
@@ -431,10 +431,14 @@ def update_trade_exit(trades_sheet, exit_data):
 
         # Find the row to update
         row_to_update = None
-        for i, row in enumerate(all_values[1:], start=2):  # Start from 2 to account for header row
-            if (row[ticker_idx] == exit_data['ticker'] and
-                row[contract_idx] == exit_data['contract_address'] and
-                row[status_idx] == "Open"):
+        for i, row in enumerate(
+            all_values[1:], start=2
+        ):  # Start from 2 to account for header row
+            if (
+                row[ticker_idx] == exit_data["ticker"]
+                and row[contract_idx] == exit_data["contract_address"]
+                and row[status_idx] == "Open"
+            ):
                 row_to_update = i
                 break
 
@@ -443,28 +447,30 @@ def update_trade_exit(trades_sheet, exit_data):
             updates = [
                 {
                     "range": f"{chr(65 + status_idx)}{row_to_update}",
-                    "values": [["Closed"]]
+                    "values": [["Closed"]],
                 },
                 {
                     "range": f"{chr(65 + exit_price_idx)}{row_to_update}",
-                    "values": [[f"${exit_data['exit_price']:.8f}"]]
+                    "values": [[f"${exit_data['exit_price']:.8f}"]],
                 },
                 {
                     "range": f"{chr(65 + exit_timestamp_idx)}{row_to_update}",
-                    "values": [[exit_data['exit_timestamp'].strftime("%Y-%m-%d %H:%M:%S")]]
+                    "values": [
+                        [exit_data["exit_timestamp"].strftime("%Y-%m-%d %H:%M:%S")]
+                    ],
                 },
                 {
                     "range": f"{chr(65 + pnl_amount_idx)}{row_to_update}",
-                    "values": [[f"${exit_data['pnl_amount']:.2f}"]]
+                    "values": [[f"${exit_data['pnl_amount']:.2f}"]],
                 },
                 {
                     "range": f"{chr(65 + pnl_percentage_idx)}{row_to_update}",
-                    "values": [[f"{exit_data['pnl_percentage']:.2f}%"]]
+                    "values": [[f"{exit_data['pnl_percentage']:.2f}%"]],
                 },
                 {
                     "range": f"{chr(65 + notes_idx)}{row_to_update}",
-                    "values": [[f"Closed due to {exit_data['exit_reason']}"]]
-                }
+                    "values": [[f"Closed due to {exit_data['exit_reason']}"]],
+                },
             ]
 
             # Wait for rate limiting
@@ -508,7 +514,7 @@ def update_pnl_sheet(sheet, stats):
             "Invested Amount ($)",
             "Current Value ($)",
             "PNL ($)",
-            "Status"
+            "Status",
         ]
         sheet.append_row(headers)
 
@@ -536,8 +542,8 @@ def update_pnl_sheet(sheet, stats):
                     "totals": {
                         "invested_amount": 0,
                         "current_value": 0,
-                        "pnl_dollars": 0
-                    }
+                        "pnl_dollars": 0,
+                    },
                 }
 
             # Determine if trade is closed
@@ -548,8 +554,12 @@ def update_pnl_sheet(sheet, stats):
             agent_trades[agent][trade_list].append(stat)
 
             # Update agent totals
-            invested = float(str(stat["invested_amount"]).replace("$", "").replace(",", ""))
-            current = float(str(stat["current_value"]).replace("$", "").replace(",", ""))
+            invested = float(
+                str(stat["invested_amount"]).replace("$", "").replace(",", "")
+            )
+            current = float(
+                str(stat["current_value"]).replace("$", "").replace(",", "")
+            )
             pnl = float(str(stat["pnl_dollars"]).replace("$", "").replace(",", ""))
 
             agent_trades[agent]["totals"]["invested_amount"] += invested
@@ -561,10 +571,14 @@ def update_pnl_sheet(sheet, stats):
 
         for agent in sorted(agent_trades.keys()):
             # Add open trades section
-            all_rows.append([f"=== {agent} Active Trades ==="] + [""] * (len(headers) - 1))
+            all_rows.append(
+                [f"=== {agent} Active Trades ==="] + [""] * (len(headers) - 1)
+            )
 
             # Sort and add open trades
-            open_trades = sorted(agent_trades[agent]["open"], key=lambda x: x["entry_time"], reverse=True)
+            open_trades = sorted(
+                agent_trades[agent]["open"], key=lambda x: x["entry_time"], reverse=True
+            )
             for trade in open_trades:
                 all_rows.append(format_trade_row(trade, "Open"))
 
@@ -572,13 +586,15 @@ def update_pnl_sheet(sheet, stats):
             all_rows.append([""] * len(headers))
 
             # Add closed trades section
-            all_rows.append([f"=== {agent} Closed Trades ==="] + [""] * (len(headers) - 1))
+            all_rows.append(
+                [f"=== {agent} Closed Trades ==="] + [""] * (len(headers) - 1)
+            )
 
             # Sort and add closed trades
             closed_trades = sorted(
                 agent_trades[agent]["closed"],
                 key=lambda x: x.get("exit_timestamp", x["entry_time"]),
-                reverse=True
+                reverse=True,
             )
             for trade in closed_trades:
                 all_rows.append(format_trade_row(trade, "Closed"))
@@ -586,35 +602,69 @@ def update_pnl_sheet(sheet, stats):
             # Add agent totals
             all_rows.append([""] * len(headers))
             totals = agent_trades[agent]["totals"]
-            all_rows.append([
-                f"{agent} Totals", "", "", "", "", "", "", "", "", "", "", "",
-                f"${totals['invested_amount']:.2f}",
-                f"${totals['current_value']:.2f}",
-                f"${totals['pnl_dollars']:.2f}",
-                ""
-            ])
+            all_rows.append(
+                [
+                    f"{agent} Totals",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    f"${totals['invested_amount']:.2f}",
+                    f"${totals['current_value']:.2f}",
+                    f"${totals['pnl_dollars']:.2f}",
+                    "",
+                ]
+            )
             all_rows.append([""] * len(headers))
 
         # Calculate and add portfolio totals
         portfolio_totals = {
-            "invested": sum(agent["totals"]["invested_amount"] for agent in agent_trades.values()),
-            "current": sum(agent["totals"]["current_value"] for agent in agent_trades.values()),
-            "pnl": sum(agent["totals"]["pnl_dollars"] for agent in agent_trades.values())
+            "invested": sum(
+                agent["totals"]["invested_amount"] for agent in agent_trades.values()
+            ),
+            "current": sum(
+                agent["totals"]["current_value"] for agent in agent_trades.values()
+            ),
+            "pnl": sum(
+                agent["totals"]["pnl_dollars"] for agent in agent_trades.values()
+            ),
         }
 
-        all_rows.append([
-            "Portfolio Totals", "", "", "", "", "", "", "", "", "", "", "",
-            f"${portfolio_totals['invested']:.2f}",
-            f"${portfolio_totals['current']:.2f}",
-            f"${portfolio_totals['pnl']:.2f}",
-            ""
-        ])
+        all_rows.append(
+            [
+                "Portfolio Totals",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                f"${portfolio_totals['invested']:.2f}",
+                f"${portfolio_totals['current']:.2f}",
+                f"${portfolio_totals['pnl']:.2f}",
+                "",
+            ]
+        )
 
         # Single batch update to sheet
         sheet_rate_limiter.wait_if_needed()
         sheet.append_rows(all_rows)
 
-        logger.info(f"PNL sheet updated successfully with {len(processed_trades)} trades")
+        logger.info(
+            f"PNL sheet updated successfully with {len(processed_trades)} trades"
+        )
 
     except Exception as e:
         logger.error(f"Error updating PNL sheet: {str(e)}")
@@ -629,23 +679,37 @@ def format_trade_row(trade, status):
 
         # Handle current/exit price based on status
         if status == "Closed":
-            current_price = float(str(trade.get("exit_price", trade["current_price"])).replace("$", "").replace(",", ""))
+            current_price = float(
+                str(trade.get("exit_price", trade["current_price"]))
+                .replace("$", "")
+                .replace(",", "")
+            )
             price_display = f"${current_price:.8f} (Exit)"
         else:
-            current_price = float(str(trade["current_price"]).replace("$", "").replace(",", ""))
+            current_price = float(
+                str(trade["current_price"]).replace("$", "").replace(",", "")
+            )
             price_display = f"${current_price:.8f}"
 
-        ath_price = float(str(trade.get("ath_price", current_price)).replace("$", "").replace(",", ""))
+        ath_price = float(
+            str(trade.get("ath_price", current_price)).replace("$", "").replace(",", "")
+        )
         stop_loss = ath_price * STOP_LOSS_PERCENTAGE
 
         # Calculate percentages
-        price_change = float(str(trade["price_change"]).replace("%", "").replace(",", ""))
+        price_change = float(
+            str(trade["price_change"]).replace("%", "").replace(",", "")
+        )
         from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
         to_stop_loss = (current_price - stop_loss) / current_price * 100
 
         # Handle invested amount and values
-        invested_amount = float(str(trade["invested_amount"]).replace("$", "").replace(",", ""))
-        current_value = float(str(trade["current_value"]).replace("$", "").replace(",", ""))
+        invested_amount = float(
+            str(trade["invested_amount"]).replace("$", "").replace(",", "")
+        )
+        current_value = float(
+            str(trade["current_value"]).replace("$", "").replace(",", "")
+        )
         pnl_dollars = float(str(trade["pnl_dollars"]).replace("$", "").replace(",", ""))
 
         return [
@@ -664,7 +728,7 @@ def format_trade_row(trade, status):
             f"${invested_amount:.2f}",
             f"${current_value:.2f}",
             f"${pnl_dollars:.2f}",
-            status
+            status,
         ]
 
     except Exception as e:
@@ -693,14 +757,14 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
         winning_trades = 0
         closed_winning_trades = 0
         open_winning_trades = 0
-        largest_gain = float('-inf')
-        largest_loss = float('inf')
+        largest_gain = float("-inf")
+        largest_loss = float("inf")
         largest_gain_info = "N/A"
         largest_loss_info = "N/A"
         best_agent = None
         worst_agent = None
-        best_pnl = float('-inf')
-        worst_pnl = float('inf')
+        best_pnl = float("-inf")
+        worst_pnl = float("inf")
         total_tweets = 0
         single_ticker_tweets = 0
         qualified_tweets = 0
@@ -721,9 +785,9 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
 
         # Process agent stats for tweet counts
         for agent, stats in agent_stats.items():
-            total_tweets += stats.get('total_tweets', 0)
-            single_ticker_tweets += stats.get('single_ticker_tweets', 0)
-            qualified_tweets += stats.get('qualified_tweets', 0)
+            total_tweets += stats.get("total_tweets", 0)
+            single_ticker_tweets += stats.get("single_ticker_tweets", 0)
+            qualified_tweets += stats.get("qualified_tweets", 0)
 
         # Process PNL sheet for trade statistics
         for row in pnl_values[1:]:  # Skip header
@@ -743,7 +807,13 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
                 invested_str = row[pnl_invested_idx].strip("$").replace(",", "")
                 current_str = row[pnl_current_value_idx].strip("$").replace(",", "")
                 pnl_str = row[pnl_amount_idx].strip("$").replace(",", "")
-                price_change_str = row[pnl_price_change_idx].split("(")[0].strip().rstrip("%").replace(",", "")
+                price_change_str = (
+                    row[pnl_price_change_idx]
+                    .split("(")[0]
+                    .strip()
+                    .rstrip("%")
+                    .replace(",", "")
+                )
 
                 if invested_str and current_str:
                     invested_amount = float(invested_str)
@@ -793,10 +863,18 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
 
         # Calculate rates and percentages
         pnl_dollars = current_balance - total_invested
-        pnl_percentage = (pnl_dollars / total_invested * 100) if total_invested > 0 else 0
-        overall_win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-        closed_win_rate = (closed_winning_trades / closed_trades * 100) if closed_trades > 0 else 0
-        open_win_rate = (open_winning_trades / open_trades * 100) if open_trades > 0 else 0
+        pnl_percentage = (
+            (pnl_dollars / total_invested * 100) if total_invested > 0 else 0
+        )
+        overall_win_rate = (
+            (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        )
+        closed_win_rate = (
+            (closed_winning_trades / closed_trades * 100) if closed_trades > 0 else 0
+        )
+        open_win_rate = (
+            (open_winning_trades / open_trades * 100) if open_trades > 0 else 0
+        )
 
         # Prepare summary rows
         summary_rows = [
@@ -815,13 +893,27 @@ def update_summary_sheet(sheet, agent_stats, pnl_sheet):
             ["Overall Win Rate", f"{overall_win_rate:.1f}%"],
             ["Closed Trades Win Rate", f"{closed_win_rate:.1f}%"],
             ["Open Trades Win Rate", f"{open_win_rate:.1f}%"],
-            ["Highest Win Rate", f"{max([overall_win_rate, closed_win_rate, open_win_rate]):.1f}% ({best_agent or 'N/A'})"],
-            ["Lowest Win Rate", f"{min([overall_win_rate, closed_win_rate, open_win_rate]):.1f}% ({worst_agent or 'N/A'})"],
+            [
+                "Highest Win Rate",
+                f"{max([overall_win_rate, closed_win_rate, open_win_rate]):.1f}% ({best_agent or 'N/A'})",
+            ],
+            [
+                "Lowest Win Rate",
+                f"{min([overall_win_rate, closed_win_rate, open_win_rate]):.1f}% ({worst_agent or 'N/A'})",
+            ],
             ["Largest Gainer", largest_gain_info],
             ["Largest Loser", largest_loss_info],
-            ["Best Performing Agent", f"{best_agent or 'N/A'}" + (f" (${best_pnl:,.2f})" if best_agent else "")],
-            ["Worst Performing Agent", f"{worst_agent or 'N/A'}" + (f" (${worst_pnl:,.2f})" if worst_agent else "")],
-            ["Last Updated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+            [
+                "Best Performing Agent",
+                f"{best_agent or 'N/A'}"
+                + (f" (${best_pnl:,.2f})" if best_agent else ""),
+            ],
+            [
+                "Worst Performing Agent",
+                f"{worst_agent or 'N/A'}"
+                + (f" (${worst_pnl:,.2f})" if worst_agent else ""),
+            ],
+            ["Last Updated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
         ]
 
         # Clear existing data and update
@@ -859,7 +951,7 @@ def update_agent_summary(sheet, stats):
             "Open Win Rate (%)",
             "Best Trade",
             "Worst Trade",
-            "Last Updated"
+            "Last Updated",
         ]
 
         # Clear existing data
@@ -889,7 +981,7 @@ def update_agent_summary(sheet, stats):
                 "worst_trade_ticker": "",
                 "avg_trade_duration": timedelta(0),
                 "total_closed_pnl": 0.0,
-                "total_open_pnl": 0.0
+                "total_open_pnl": 0.0,
             }
 
         spreadsheet = sheet.spreadsheet
@@ -933,7 +1025,13 @@ def update_agent_summary(sheet, stats):
                 # Process PNL and trade data
                 pnl_str = row[pnl_amount_idx].strip("$").replace(",", "")
                 # Clean up price change string and remove '%' and '(Final)' if present
-                price_change_str = row[pnl_price_change_idx].split("(")[0].strip().rstrip("%").replace(",", "")
+                price_change_str = (
+                    row[pnl_price_change_idx]
+                    .split("(")[0]
+                    .strip()
+                    .rstrip("%")
+                    .replace(",", "")
+                )
                 status = row[pnl_status_idx]
                 is_closed = status == "Closed"
 
@@ -944,7 +1042,9 @@ def update_agent_summary(sheet, stats):
                         price_change = float(price_change_str)
                     except ValueError:
                         # If conversion fails, try cleaning the string further
-                        price_change_str = ''.join(c for c in price_change_str if c in '0123456789.-')
+                        price_change_str = "".join(
+                            c for c in price_change_str if c in "0123456789.-"
+                        )
                         price_change = float(price_change_str)
 
                     # Update trade counts
@@ -976,7 +1076,9 @@ def update_agent_summary(sheet, stats):
                 continue
 
         # Process tweet statistics
-        tweets_sheet = spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Tweets"))
+        tweets_sheet = spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Tweets")
+        )
         tweet_values = tweets_sheet.get_all_values()
         tweet_headers = tweet_values[0]
 
@@ -1004,16 +1106,22 @@ def update_agent_summary(sheet, stats):
             # Calculate win rates
             closed_win_rate = (
                 (stats["closed_winning_trades"] / stats["closed_trades"] * 100)
-                if stats["closed_trades"] > 0 else 0
+                if stats["closed_trades"] > 0
+                else 0
             )
             open_win_rate = (
                 (stats["open_winning_trades"] / stats["open_trades"] * 100)
-                if stats["open_trades"] > 0 else 0
+                if stats["open_trades"] > 0
+                else 0
             )
             overall_win_rate = (
-                ((stats["closed_winning_trades"] + stats["open_winning_trades"]) /
-                 stats["total_trades"] * 100)
-                if stats["total_trades"] > 0 else 0
+                (
+                    (stats["closed_winning_trades"] + stats["open_winning_trades"])
+                    / stats["total_trades"]
+                    * 100
+                )
+                if stats["total_trades"] > 0
+                else 0
             )
 
             row = [
@@ -1042,8 +1150,12 @@ def update_agent_summary(sheet, stats):
             logger.info("Agent summary updated successfully")
 
         # Update summary sheet
-        summary_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Summary"))
-        pnl_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "PNL"))
+        summary_sheet = sheet.spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Summary")
+        )
+        pnl_sheet = sheet.spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "PNL")
+        )
         update_summary_sheet(summary_sheet, agent_stats, pnl_sheet)
 
     except Exception as e:
@@ -1144,6 +1256,7 @@ def setup_new_sheet():
 
     print(f"Created new spreadsheet: {sh.url}")
     print("Please share this spreadsheet with your Google account email")
+
 
 if __name__ == "__main__":
     import sys
