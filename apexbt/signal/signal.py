@@ -89,6 +89,7 @@ class SignalAPI:
         signal_from: str,
         chain: str,
         tx_type: str = "buy",
+        market_cap: float = None,  # Add market_cap parameter
     ) -> Optional[Dict]:
         """
         Send a trading signal to the signal bot API
@@ -100,6 +101,7 @@ class SignalAPI:
             signal_from (str): Signal source
             chain (str): Blockchain network
             tx_type (str): Transaction type (default: "buy")
+            market_cap (float): Market capitalization (optional)
 
         Returns:
             Optional[Dict]: API response data if successful, None if failed
@@ -109,6 +111,7 @@ class SignalAPI:
             return None
 
         try:
+            # Create the base payload
             payload = {
                 "token": token,
                 "contract": contract,
@@ -117,6 +120,15 @@ class SignalAPI:
                 "chain": chain.lower(),
                 "tx_type": tx_type,
             }
+
+            # Add market_cap to payload if it exists
+            if market_cap is not None:
+                # Format market cap to be more readable
+                if market_cap >= 1_000_000:
+                    formatted_mc = f"${market_cap/1_000_000:.2f}M"
+                else:
+                    formatted_mc = f"${market_cap:.2f}"
+                payload["market_cap"] = formatted_mc
 
             response = self.session.post(f"{self.base_url}/signal", json=payload)
 

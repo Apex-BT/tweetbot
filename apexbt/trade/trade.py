@@ -25,6 +25,7 @@ class TradePosition:
     ath_price: float = None
     ath_timestamp: datetime = None
     stop_loss: float = None
+    market_cap: float = None
 
     def __post_init__(self):
         # Initialize ATH with entry price if not set
@@ -344,6 +345,7 @@ class TradeManager:
         entry_price: float,
         signal_from: str,
         network: str,
+        market_cap: float = None,  # Add market_cap parameter
     ):
         """Send trade signal to signal bot"""
         if self.historical:
@@ -358,6 +360,7 @@ class TradeManager:
                     entry_price=entry_price,
                     signal_from=signal_from,
                     chain=network,
+                    market_cap=market_cap,  # Add market_cap
                 )
                 logger.info(f"Signal API response: {signal_response}")
                 return signal_response
@@ -414,28 +417,35 @@ class TradeManager:
             logger.error(f"Error syncing PNL updates: {str(e)}")
 
     def display_stats(self, stats):
-        """Display current trading statistics in console"""
-        print("\nCurrent Trading Statistics:")
-        print("-" * 100)  # Made wider to accommodate more info
+        """Display current trading statistics using logger"""
+        logger.info("\nCurrent Trading Statistics:")
+        logger.info("-" * 120)
 
         # Display individual trades with ATH and Stop Loss
-        print("Individual Trades:")
-        print(
-            f"{'AI Agent':<12} {'Ticker':<10} {'Current':<12} {'ATH':<12} {'Stop Loss':<12} {'Entry':<12} {'Change':<8} {'From ATH':<8} {'To SL':<8}"
+        logger.info("Individual Trades:")
+        logger.info(
+            f"{'AI Agent':<12} {'Ticker':<10} {'Current':<12} {'ATH':<12} {'Stop Loss':<12} "
+            f"{'Entry':<12} {'Change':<8} {'From ATH':<8} {'To SL':<8} {'MC':<10}"
         )
-        print("-" * 100)
+        logger.info("-" * 120)
 
         for position in stats:
             if position["type"] == "trade":
                 current_price = position["current_price"]
                 ath_price = position["ath_price"]
                 stop_loss = ath_price * STOP_LOSS_PERCENTAGE
-                from_ath = (
-                    ((current_price - ath_price) / ath_price * 100) if ath_price else 0
-                )
+                from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
                 to_stop_loss = (current_price - stop_loss) / current_price * 100
 
-                print(
+                # Format market cap
+                market_cap_str = ""
+                if "market_cap" in position and position["market_cap"]:
+                    if position["market_cap"] >= 1_000_000:
+                        market_cap_str = f"${position['market_cap']/1_000_000:.2f}M"
+                    else:
+                        market_cap_str = f"${position['market_cap']:.2f}"
+
+                logger.info(
                     f"{position['ai_agent']:<12} "
                     f"{position['ticker']:<10} "
                     f"${current_price:<11.8f} "
@@ -444,23 +454,24 @@ class TradeManager:
                     f"${position['entry_price']:<11.8f} "
                     f"{position['price_change']:<8} "
                     f"{from_ath:>7.2f}% "
-                    f"{to_stop_loss:>7.2f}%"
+                    f"{to_stop_loss:>7.2f}% "
+                    f"{market_cap_str:<10}"
                 )
 
         # Display totals by agent
-        print("\nAgent Totals:")
-        print("-" * 40)
+        logger.info("\nAgent Totals:")
+        logger.info("-" * 40)
         for position in stats:
             if position["type"] == "agent_total":
-                print(f"{position['agent']}: ${position['pnl_dollars']:.2f}")
+                logger.info(f"{position['agent']}: ${position['pnl_dollars']:.2f}")
 
         # Display grand total
-        print("\nPortfolio Summary:")
-        print("-" * 40)
+        logger.info("\nPortfolio Summary:")
+        logger.info("-" * 40)
         for position in stats:
             if position["type"] == "grand_total":
-                print(f"Total Portfolio PNL: ${position['pnl_dollars']:.2f}")
-        print("-" * 80)
+                logger.info(f"Total Portfolio PNL: ${position['pnl_dollars']:.2f}")
+        logger.info("-" * 80)
 
     def get_current_stats(self):
         """Get current statistics from database"""
@@ -576,6 +587,7 @@ class TradeManager:
                     ai_agent=ai_agent,
                     contract_address=contract_address,
                     network=network,
+                    market_cap=market_cap
                 )
             )
 
@@ -588,6 +600,7 @@ class TradeManager:
                     entry_price=entry_price,
                     signal_from=ai_agent,
                     network=network,
+                    market_cap=market_cap,
                 )
 
         return success
@@ -621,15 +634,17 @@ class TradeManager:
 
             # Send sell signal if not in historical mode
             if not self.historical and self.signal_api:
-                self.signal_api.send_signal(
+                res = self.signal_api.send_signal(
                     token=trade.ticker,
                     contract=trade.contract_address,
                     entry_price=exit_price,
                     signal_from=trade.ai_agent,
                     chain=trade.network,
                     tx_type="sell",
+                    market_cap=trade.market_cap
                 )
                 logger.info(f"Sent sell signal for {trade.ticker}")
+                logger.info(res)
 
             trade_data = {
                 "exit_price": exit_price,

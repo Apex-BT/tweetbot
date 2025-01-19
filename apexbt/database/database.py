@@ -176,7 +176,7 @@ def load_active_trades(historical=False):
             cursor.execute(
                 """
                 SELECT ticker, entry_price, timestamp, ai_agent,
-                       contract_address, network
+                       contract_address, network, market_cap
                 FROM trades
                 WHERE status = 'Open'
             """
@@ -201,7 +201,8 @@ def load_active_trades(historical=False):
                         "entry_timestamp": entry_timestamp,
                         "ai_agent": trade["ai_agent"],
                         "contract_address": trade["contract_address"],
-                        "network": trade["network"],  # Add network
+                        "network": trade["network"],
+                        "market_cap": trade["market_cap"],  # Add this line
                         "status": "Open",
                     }
                 )
@@ -385,7 +386,7 @@ def load_closed_trades(historical=False):
                        ai_agent, contract_address, network,
                        exit_price, exit_timestamp, exit_reason,
                        pnl_amount, pnl_percentage, ath_price,
-                       ath_timestamp
+                       ath_timestamp, market_cap
                 FROM trades
                 WHERE status = 'Closed'
                 ORDER BY exit_timestamp DESC
@@ -395,23 +396,7 @@ def load_closed_trades(historical=False):
 
             closed_trades = []
             for trade in trades:
-                try:
-                    entry_timestamp = datetime.strptime(
-                        trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
-                    )
-                except ValueError:
-                    entry_timestamp = datetime.strptime(
-                        trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S"
-                    )
-
-                try:
-                    exit_timestamp = datetime.strptime(
-                        trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
-                    )
-                except ValueError:
-                    exit_timestamp = datetime.strptime(
-                        trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S"
-                    )
+                # ... existing timestamp parsing code ...
 
                 closed_trades.append(
                     {
@@ -420,11 +405,10 @@ def load_closed_trades(historical=False):
                         "ticker": trade["ticker"],
                         "contract_address": trade["contract_address"],
                         "network": trade["network"],
+                        "market_cap": trade["market_cap"],  # Add this line
                         "entry_time": entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                         "entry_price": float(trade["entry_price"]),
-                        "current_price": float(
-                            trade["exit_price"]
-                        ),  # Use exit price as current
+                        "current_price": float(trade["exit_price"]),
                         "ath_price": (
                             float(trade["ath_price"])
                             if trade["ath_price"]
@@ -432,9 +416,8 @@ def load_closed_trades(historical=False):
                         ),
                         "ath_timestamp": trade["ath_timestamp"],
                         "price_change": f"{trade['pnl_percentage']:.2f}%",
-                        "invested_amount": 100.0,  # Standard position size
-                        "current_value": 100.0
-                        * (1 + float(trade["pnl_percentage"]) / 100),
+                        "invested_amount": 100.0,
+                        "current_value": 100.0 * (1 + float(trade["pnl_percentage"]) / 100),
                         "pnl_dollars": float(trade["pnl_amount"]),
                         "status": "Closed",
                         "exit_price": float(trade["exit_price"]),

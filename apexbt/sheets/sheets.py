@@ -1006,8 +1006,8 @@ def update_agent_summary(sheet, stats):
             logger.error(f"Required column not found in PNL sheet: {e}")
             return
 
-        current_agent = None
-        section_start = False
+        # Process PNL sheet for trade statistics and qualified tweets
+        processed_trades = set()  # To track unique trades
 
         for row in pnl_values[1:]:  # Skip header
             if not row or len(row) <= max(pnl_amount_idx, pnl_status_idx):
@@ -1021,10 +1021,17 @@ def update_agent_summary(sheet, stats):
             if agent not in agent_stats:
                 continue
 
+            # Create unique trade identifier
+            trade_id = f"{agent}_{row[pnl_ticker_idx]}_{row[pnl_contract_idx]}"
+
+            # Only process each unique trade once
+            if trade_id not in processed_trades:
+                processed_trades.add(trade_id)
+                agent_stats[agent]["qualified_tweets"] += 1  # Each unique trade represents a qualified tweet
+
             try:
                 # Process PNL and trade data
                 pnl_str = row[pnl_amount_idx].strip("$").replace(",", "")
-                # Clean up price change string and remove '%' and '(Final)' if present
                 price_change_str = (
                     row[pnl_price_change_idx]
                     .split("(")[0]
@@ -1037,11 +1044,9 @@ def update_agent_summary(sheet, stats):
 
                 if pnl_str and price_change_str:
                     pnl = float(pnl_str)
-                    # Convert percentage string to float, handling negative values
                     try:
                         price_change = float(price_change_str)
                     except ValueError:
-                        # If conversion fails, try cleaning the string further
                         price_change_str = "".join(
                             c for c in price_change_str if c in "0123456789.-"
                         )
@@ -1075,10 +1080,8 @@ def update_agent_summary(sheet, stats):
                 logger.warning(f"Error processing row for {agent}: {e}")
                 continue
 
-        # Process tweet statistics
-        tweets_sheet = spreadsheet.worksheet(
-            sheet.title.replace("AgentSummary", "Tweets")
-        )
+        # Process tweet statistics (only for total and single ticker tweets)
+        tweets_sheet = spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Tweets"))
         tweet_values = tweets_sheet.get_all_values()
         tweet_headers = tweet_values[0]
 
@@ -1086,7 +1089,7 @@ def update_agent_summary(sheet, stats):
         ai_agent_idx = tweet_headers.index("AI Agent")
         ticker_status_idx = tweet_headers.index("Ticker Status")
 
-        for row in tweet_values[1:]:  # Skip header
+        for row in tweet_values[1:]:
             if len(row) <= max(ai_agent_idx, ticker_status_idx):
                 continue
 
@@ -1097,8 +1100,6 @@ def update_agent_summary(sheet, stats):
             agent_stats[agent]["total_tweets"] += 1
             if row[ticker_status_idx] == "Single ticker":
                 agent_stats[agent]["single_ticker_tweets"] += 1
-            if row[ticker_status_idx] in ["Qualified", "Trading"]:
-                agent_stats[agent]["qualified_tweets"] += 1
 
         # Prepare rows for updating with expanded statistics
         rows_to_update = []
@@ -1128,7 +1129,7 @@ def update_agent_summary(sheet, stats):
                 agent,
                 stats["total_tweets"],
                 stats["single_ticker_tweets"],
-                stats["qualified_tweets"],
+                stats["qualified_tweets"],  # This now represents actual trades taken
                 f"${stats['cumulative_pnl']:,.2f}",
                 f"${stats['total_closed_pnl']:,.2f}",
                 f"${stats['total_open_pnl']:,.2f}",
@@ -1150,12 +1151,7 @@ def update_agent_summary(sheet, stats):
             logger.info("Agent summary updated successfully")
 
         # Update summary sheet
-        summary_sheet = sheet.spreadsheet.worksheet(
-            sheet.title.replace("AgentSummary", "Summary")
-        )
-        pnl_sheet = sheet.spreadsheet.worksheet(
-            sheet.title.replace("AgentSummary", "PNL")
-        )
+        summary_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Summary"))
         update_summary_sheet(summary_sheet, agent_stats, pnl_sheet)
 
     except Exception as e:
