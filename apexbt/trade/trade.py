@@ -63,15 +63,11 @@ class TradeManager:
         self.last_update = 0
         self.MIN_UPDATE_INTERVAL = 2
         self.sheets = None
-        self.telegram_manager = None
         self.signal_api = None
         self.load_active_trades()
 
     def set_signal_api(self, signal_api):
         self.signal_api = signal_api
-
-    def set_telegram_manager(self, telegram_manager):
-        self.telegram_manager = telegram_manager
 
     def load_active_trades(self):
         """Load active trades from database"""
@@ -273,70 +269,6 @@ class TradeManager:
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
             logger.exception("Full traceback:")
-
-    def send_trade_notification(
-        self,
-        ticker: str,
-        contract_address: str,
-        entry_price: float,
-        ai_agent: str,
-        network: str,
-        market_cap: float = None,
-    ):
-        """Send notification for new trade via Telegram"""
-        if self.historical:
-            return
-
-        try:
-            if self.telegram_manager:
-                # Format market cap to be more readable
-                market_cap_str = ""
-                if market_cap:
-                    if market_cap >= 1_000_000:
-                        market_cap_str = f"${market_cap/1_000_000:.2f}M"
-                    else:
-                        market_cap_str = f"${market_cap:.2f}"
-
-                message = (
-                    f"🔥 New signal just dropped 💥\n\n"
-                    f"Token: <code>${ticker}</code>\n"
-                    f"Chain: <code>{network.lower()}</code>\n"
-                    f"CA: <code>{contract_address}</code>\n"
-                    f"Current price: <code>${entry_price:.8f}</code>"
-                )
-
-                if market_cap_str:
-                    message += f"\nCurrent MC: <code>{market_cap_str}</code>"
-
-                self.telegram_manager.send_message(message)
-                logger.info(f"Trade notification sent for {ticker}")
-        except Exception as e:
-            logger.error(f"Error sending trade notification: {str(e)}")
-
-    def notify_trade_exit(self, trade_data):
-        """Send notification for trade exit via Telegram"""
-        if self.historical:
-            return
-
-        try:
-            duration_str = str(trade_data["duration"]).split(".")[
-                0
-            ]  # Remove microseconds
-            message = (
-                f"💀 Position Closed 💀\n\n"
-                f"Token: <code>${trade_data['ticker']}</code>\n"
-                f"Chain: <code>{trade_data['network'].lower()}</code>\n"
-                f"CA: <code>{trade_data['contract_address']}</code>\n"
-                f"Exit price: <code>${trade_data['exit_price']:.8f}</code>\n"
-                f"PNL: <code>{trade_data['pnl_percentage']:.2f}%</code>\n"
-                f"Duration: <code>{duration_str}</code>"
-            )
-
-            if hasattr(self, "telegram_manager"):
-                self.telegram_manager.send_message(message)
-
-        except Exception as e:
-            logger.error(f"Error sending trade exit notification: {str(e)}")
 
     def send_trade_signal(
         self,

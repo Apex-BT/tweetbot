@@ -5,8 +5,7 @@ from apexbt.crypto.crypto import get_crypto_price_dexscreener
 from apexbt.trade.trade import TradeManager
 from apexbt.sheets.sheets import setup_google_sheets
 from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
-from apexbt.telegram_bot.telegram import TelegramManager
-from apexbt.config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TWITTER_USERS
+from apexbt.config.config import TWITTER_USERS
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
@@ -110,10 +109,8 @@ def main():
     twitter_manager = TwitterManager()
 
     trade_manager = TradeManager(update_interval=TRADE_UPDATE_INTERVAL_SECONDS)
-    telegram_manager = TelegramManager(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     SignalAPI.initialize(SIGNAL_API_USERNAME, SIGNAL_API_PASSWORD)
     signal_api = SignalAPI()
-    trade_manager.set_telegram_manager(telegram_manager)
     trade_manager.set_signal_api(signal_api)
 
     trade_agent = TradeAgent()
