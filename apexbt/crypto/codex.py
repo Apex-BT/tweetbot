@@ -3,7 +3,7 @@ import requests
 from typing import List, Dict, Optional
 import logging
 from enum import Enum
-from apexbt.config.config import CODEX_API_KEY
+from apexbt.config.config import config
 
 
 class Network(Enum):
@@ -40,7 +40,7 @@ class Codex:
     rate_limiter = RateLimiter(requests_per_second=5)
     session = requests.Session()
     session.headers.update(
-        {"Authorization": CODEX_API_KEY, "Content-Type": "application/json"}
+        {"Authorization": config.CODEX_API_KEY, "Content-Type": "application/json"}
     )
     SUPPORTED_NETWORKS = {
         # "ethereum": Network.ETHEREUM.value,

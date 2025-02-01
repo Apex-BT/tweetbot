@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 from google.api_core import retry
-from apexbt.config.config import GOOGLE_API_KEY
+from apexbt.config.config import config
 from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class TradeAgent:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
-            google_api_key=GOOGLE_API_KEY,
+            google_api_key=config.GOOGLE_API_KEY,
             temperature=0,
             max_output_tokens=150,
         )

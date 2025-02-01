@@ -1,12 +1,11 @@
 # sheets.py
-
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import apexbt.config.config as config
+from apexbt.config.config import config
 import logging
 import time
 from datetime import datetime, timedelta
-from config.config import TWITTER_USERS, STOP_LOSS_PERCENTAGE
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -50,7 +49,6 @@ class RateLimiter:
 # Create a global rate limiter instance
 sheet_rate_limiter = RateLimiter(max_requests_per_minute=50)  # Conservative limit
 
-
 def setup_google_sheets(historical=False):
     """Setup Google Sheets connection with multiple worksheets"""
     scope = [
@@ -58,8 +56,8 @@ def setup_google_sheets(historical=False):
         "https://www.googleapis.com/auth/drive",
     ]
 
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-        config.CREDENTIALS_FILE, scope
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        config.SHEETS_CREDENTIALS, scope
     )
 
     client = gspread.authorize(credentials)
@@ -287,7 +285,7 @@ def save_trade(sheet, trade_data, pnl_sheet):
         # Calculate stop loss if ATH price is available
         stop_loss = None
         if "ath_price" in trade_data and trade_data["ath_price"]:
-            stop_loss = float(trade_data["ath_price"]) * STOP_LOSS_PERCENTAGE
+            stop_loss = float(trade_data["ath_price"]) * config.STOP_LOSS_PERCENTAGE
 
         # Format market cap for display
         market_cap_display = (
@@ -694,7 +692,7 @@ def format_trade_row(trade, status):
         ath_price = float(
             str(trade.get("ath_price", current_price)).replace("$", "").replace(",", "")
         )
-        stop_loss = ath_price * STOP_LOSS_PERCENTAGE
+        stop_loss = ath_price * config.STOP_LOSS_PERCENTAGE
 
         # Calculate percentages
         price_change = float(
@@ -963,7 +961,7 @@ def update_agent_summary(sheet, stats):
         agent_stats = {}
 
         # Initialize stats for each agent
-        for agent in TWITTER_USERS:
+        for agent in config.TWITTER_USERS:
             agent_stats[agent] = {
                 "total_tweets": 0,
                 "single_ticker_tweets": 0,
@@ -1213,8 +1211,8 @@ def get_sheet_access():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-        config.CREDENTIALS_FILE, scope
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        config.SHEETS_CREDENTIALS, scope
     )
     client = gspread.authorize(credentials)
 
@@ -1235,8 +1233,8 @@ def setup_new_sheet():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-        config.CREDENTIALS_FILE, scope
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+        config.SHEETS_CREDENTIALS, scope
     )
 
     # Authorize and create new spreadsheet
@@ -1263,8 +1261,8 @@ if __name__ == "__main__":
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
         ]
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(
-            config.CREDENTIALS_FILE, scope
+        credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+            config.SHEETS_CREDENTIALS, scope
         )
 
         # Authorize and create new spreadsheet
@@ -1292,8 +1290,8 @@ if __name__ == "__main__":
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
         ]
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(
-            config.CREDENTIALS_FILE, scope
+        credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+            config.SHEETS_CREDENTIALS, scope
         )
         client = gspread.authorize(credentials)
 

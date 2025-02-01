@@ -1,7 +1,7 @@
 import logging
 import requests
 from typing import Dict, Optional
-from apexbt.config.config import SIGNAL_API_BASE_URL
+from apexbt.config.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class SignalAPI:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, base_url: str = SIGNAL_API_BASE_URL):
+    def __init__(self, base_url: str = config.SIGNAL_API_BASE_URL):
         if not hasattr(self, "initialized"):
             self.base_url = base_url.rstrip("/")
             self.session = requests.Session()
@@ -24,7 +24,7 @@ class SignalAPI:
 
     @classmethod
     def initialize(
-        cls, username: str, password: str, base_url: str = SIGNAL_API_BASE_URL
+        cls, username: str, password: str, base_url: str = config.SIGNAL_API_BASE_URL
     ) -> bool:
         """
         Initialize the API with authentication

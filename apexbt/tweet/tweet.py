@@ -2,14 +2,13 @@
 import tweepy
 import logging
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from dataclasses import dataclass
-from apexbt.config import config
+from apexbt.config.config import config
 from typing import Tuple, List, Optional
 import time
-import apexbt.database.database as db
 from collections import deque
-
+from apexbt.database.database import Database
 
 class RateLimiter:
     def __init__(self, max_requests, time_window):
@@ -79,12 +78,13 @@ class MockTweet:
 
 
 class TwitterManager:
-    def __init__(self):
-        self.api_key = config.API_KEY
-        self.api_secret = config.API_SECRET
-        self.access_token = config.ACCESS_TOKEN
-        self.access_token_secret = config.ACCESS_TOKEN_SECRET
-        self.bearer_token = config.BEARER_TOKEN
+    def __init__(self, db: Database):
+        self.db = db
+        self.api_key = config.TWITTER_API_KEY
+        self.api_secret = config.TWITTER_API_SECRET
+        self.access_token = config.TWITTER_ACCESS_TOKEN
+        self.access_token_secret = config.TWITTER_ACCESS_TOKEN_SECRET
+        self.bearer_token = config.TWITTER_BEARER_TOKEN
         self.client = self._setup_client()
 
     def _setup_client(self) -> tweepy.Client:
@@ -151,7 +151,7 @@ class TwitterManager:
             user_id = self.get_user_id(username)
             if user_id:
                 user_ids[username] = user_id
-                latest_tweet_id = db.get_latest_tweet_id_by_agent(username)
+                latest_tweet_id = self.db.get_latest_tweet_id_by_agent(username)
                 latest_tweet_ids[username] = latest_tweet_id
                 logger.info(
                     f"Initialized @{username} - User ID: {user_id}, Latest Tweet ID: {latest_tweet_id}"
@@ -264,7 +264,7 @@ class TwitterManager:
             logger.error(f"Could not find user ID for {username}")
             return []
 
-        latest_tweet_id = db.get_latest_tweet_id_by_agent(username, historical=True)
+        latest_tweet_id = self.db.get_latest_tweet_id_by_agent(username)
         logger.info(f"Latest processed tweet ID for {username}: {latest_tweet_id}")
 
         if start_date.tzinfo is None:

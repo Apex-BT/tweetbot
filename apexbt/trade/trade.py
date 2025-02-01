@@ -5,9 +5,9 @@ import logging
 from dataclasses import dataclass
 from typing import List
 from datetime import datetime
-import apexbt.database.database as db
 from apexbt.crypto.codex import Codex
-from config.config import STOP_LOSS_PERCENTAGE
+from apexbt.config.config import config
+from apexbt.database.database import Database
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class TradePosition:
 
     def update_stop_loss(self):
         """Calculate stop loss based on ATH price"""
-        self.stop_loss = self.ath_price * STOP_LOSS_PERCENTAGE
+        self.stop_loss = self.ath_price * config.STOP_LOSS_PERCENTAGE
 
     def check_stop_loss(self, current_price: float) -> bool:
         """Check if current price has hit stop loss"""
@@ -54,7 +54,8 @@ class TradePosition:
 
 
 class TradeManager:
-    def __init__(self, update_interval=300, historical=False):
+    def __init__(self, db: Database, update_interval=300, historical=False):
+        self.db = db
         self.update_interval = update_interval
         self.historical = historical
         self.active_trades: List[TradePosition] = []
@@ -71,7 +72,7 @@ class TradeManager:
 
     def load_active_trades(self):
         """Load active trades from database"""
-        trades = db.load_active_trades(self.historical)
+        trades = self.db.load_active_trades()
         self.active_trades = [TradePosition(**trade) for trade in trades]
         logger.info(f"Loaded {len(self.active_trades)} active trades")
 
@@ -104,7 +105,7 @@ class TradeManager:
     def update_pnl(self, stats, sheets=None):
         """Update PNL in both database and Google Sheets"""
         # Update database
-        db.update_pnl_table(stats, self.historical)
+        self.db.update_pnl_table(stats)
 
         # Update Google Sheets if available
         if sheets and "pnl" in sheets:
@@ -125,7 +126,7 @@ class TradeManager:
             trades_to_exit = []
 
             # Get closed trades first
-            closed_trades = db.load_closed_trades(self.historical)
+            closed_trades = self.db.load_closed_trades()
 
             # Process all active trades first before any updates
             trades_to_process = self.active_trades.copy()
@@ -313,7 +314,7 @@ class TradeManager:
     ):
         """Update ATH and stop loss values in database"""
         try:
-            with db.get_db_connection(self.historical) as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -331,7 +332,7 @@ class TradeManager:
         """Sync PNL updates to both database and sheets"""
         try:
             # Update database
-            db.update_pnl_table(stats, self.historical)
+            self.db.update_pnl_table(stats)
 
             # Update Google Sheets if available
             if sheets and "pnl" in sheets:
@@ -365,7 +366,7 @@ class TradeManager:
             if position["type"] == "trade":
                 current_price = position["current_price"]
                 ath_price = position["ath_price"]
-                stop_loss = ath_price * STOP_LOSS_PERCENTAGE
+                stop_loss = ath_price * config.STOP_LOSS_PERCENTAGE
                 from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
                 to_stop_loss = (current_price - stop_loss) / current_price * 100
 
@@ -408,7 +409,7 @@ class TradeManager:
     def get_current_stats(self):
         """Get current statistics from database"""
         try:
-            with db.get_db_connection(self.historical) as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM pnl ORDER BY ai_agent, ticker")
                 rows = cursor.fetchall()
@@ -476,7 +477,7 @@ class TradeManager:
         # Initialize ATH with entry price
         ath_price = entry_price
         ath_timestamp = entry_timestamp
-        stop_loss = ath_price * STOP_LOSS_PERCENTAGE
+        stop_loss = ath_price * config.STOP_LOSS_PERCENTAGE
 
         trade_data = {
             "trade_id": f"T{entry_timestamp.strftime('%Y%m%d%H%M%S%f')}",
@@ -498,7 +499,7 @@ class TradeManager:
         }
 
         # Save to database
-        success = db.save_trade(trade_data, self.historical)
+        success = self.db.save_trade(trade_data)
 
         if success:
             # Save to sheets if available
@@ -593,8 +594,7 @@ class TradeManager:
             }
 
             # Update database with comprehensive exit information
-            with db.get_db_connection(self.historical) as conn:
-                db.update_trade_exit(conn, trade_data)
+            self.db.update_trade_exit(trade_data)
 
             if self.sheets and "trades" in self.sheets:
                 exit_data = {
@@ -607,7 +607,6 @@ class TradeManager:
                     "pnl_percentage": pnl_percentage,
                 }
                 from apexbt.sheets.sheets import update_trade_exit
-
                 update_trade_exit(self.sheets["trades"], exit_data)
 
             # Remove from active trades list
