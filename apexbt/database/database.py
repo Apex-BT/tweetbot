@@ -1,5 +1,6 @@
+import psycopg2
+from psycopg2.extras import DictCursor
 from apexbt.config.config import config
-import sqlite3
 from datetime import datetime
 import logging
 from contextlib import contextmanager
@@ -9,17 +10,23 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self, historical=False):
         self.historical = historical
-        self.db_path = config.HISTORICAL_DATABASE_PATH if historical else config.DATABASE_PATH
+        self.db_url = config.DATABASE_URL
+        if not self.db_url:
+            raise ValueError("Database URL not configured")
 
     @contextmanager
     def get_connection(self):
         """Get database connection with context manager"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = None
         try:
+            conn = psycopg2.connect(self.db_url)
             yield conn
+        except psycopg2.Error as e:
+            logger.error(f"Database connection error: {str(e)}")
+            raise
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def init_database(self):
         """Initialize the database with required tables"""
@@ -35,11 +42,11 @@ class Database:
                     timestamp TIMESTAMP,
                     ticker TEXT,
                     ticker_status TEXT,
-                    current_price REAL,
-                    tweet_time_price REAL,
-                    volume_24h REAL,
-                    liquidity REAL,
-                    price_change_24h REAL,
+                    current_price DECIMAL,
+                    tweet_time_price DECIMAL,
+                    volume_24h DECIMAL,
+                    liquidity DECIMAL,
+                    price_change_24h DECIMAL,
                     dex TEXT,
                     network TEXT,
                     trading_pair TEXT,
@@ -54,43 +61,43 @@ class Database:
                     ai_agent TEXT,
                     timestamp TIMESTAMP,
                     ticker TEXT,
-                    entry_price REAL,
-                    position_size REAL,
+                    entry_price DECIMAL,
+                    position_size DECIMAL,
                     direction TEXT,
-                    stop_loss REAL,
-                    take_profit REAL,
+                    stop_loss DECIMAL,
+                    take_profit DECIMAL,
                     tweet_id TEXT,
                     status TEXT,
-                    exit_price REAL,
+                    exit_price DECIMAL,
                     exit_timestamp TIMESTAMP,
                     exit_reason TEXT,
-                    pnl_amount REAL,
-                    pnl_percentage REAL,
+                    pnl_amount DECIMAL,
+                    pnl_percentage DECIMAL,
                     notes TEXT,
                     contract_address TEXT,
                     network TEXT,
-                    ath_price REAL,
+                    ath_price DECIMAL,
                     ath_timestamp TIMESTAMP,
                     trade_duration TEXT,
-                    max_drawdown REAL,
-                    max_profit REAL,
-                    market_cap REAL,
+                    max_drawdown DECIMAL,
+                    max_profit DECIMAL,
+                    market_cap DECIMAL,
                     FOREIGN KEY(tweet_id) REFERENCES tweets(tweet_id)
                 )
             """)
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS pnl (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     ai_agent TEXT,
                     ticker TEXT,
                     entry_time TIMESTAMP,
-                    entry_price REAL,
-                    current_price REAL,
-                    price_change_percentage REAL,
-                    invested_amount REAL,
-                    current_value REAL,
-                    pnl REAL,
+                    entry_price DECIMAL,
+                    current_price DECIMAL,
+                    price_change_percentage DECIMAL,
+                    invested_amount DECIMAL,
+                    current_value DECIMAL,
+                    pnl DECIMAL,
                     contract_address TEXT
                 )
             """)
@@ -109,7 +116,7 @@ class Database:
                         ticker_status, current_price, tweet_time_price, volume_24h,
                         liquidity, price_change_24h, dex, network, trading_pair,
                         contract_address, last_updated
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         str(tweet.id),
@@ -141,7 +148,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT 1 FROM tweets WHERE tweet_id = ? AND ai_agent = ?",
+                "SELECT 1 FROM tweets WHERE tweet_id = %s AND ai_agent = %s",
                 (str(tweet_id), ai_agent),
             )
             return cursor.fetchone() is not None
@@ -151,7 +158,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT tweet_id FROM tweets WHERE ai_agent = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT tweet_id FROM tweets WHERE ai_agent = %s ORDER BY created_at DESC LIMIT 1",
                 (ai_agent,),
             )
             result = cursor.fetchone()
@@ -161,7 +168,7 @@ class Database:
         """Load active trades from database"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(cursor_factory=DictCursor)
                 cursor.execute("""
                     SELECT ticker, entry_price, timestamp, ai_agent,
                            contract_address, network, market_cap
@@ -174,11 +181,13 @@ class Database:
                 for trade in trades:
                     try:
                         entry_timestamp = datetime.strptime(
-                            trade["timestamp"], "%Y-%m-%d %H:%M:%S.%f"
+                            trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S.%f"),
+                            "%Y-%m-%d %H:%M:%S.%f"
                         )
                     except ValueError:
                         entry_timestamp = datetime.strptime(
-                            trade["timestamp"], "%Y-%m-%d %H:%M:%S"
+                            trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                            "%Y-%m-%d %H:%M:%S"
                         )
 
                     active_trades.append({
@@ -217,7 +226,7 @@ class Database:
                                 current_price, price_change_percentage,
                                 invested_amount, current_value, pnl,
                                 contract_address
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 stat["ai_agent"],
@@ -250,7 +259,7 @@ class Database:
                         trade_id, ai_agent, timestamp, ticker, contract_address,
                         entry_price, position_size, direction, tweet_id,
                         status, notes, network, market_cap
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         trade_data["trade_id"],
@@ -283,17 +292,17 @@ class Database:
                     """
                     UPDATE trades
                     SET status = 'Closed',
-                        exit_price = ?,
-                        exit_timestamp = ?,
-                        exit_reason = ?,
-                        pnl_amount = ?,
-                        pnl_percentage = ?,
-                        trade_duration = ?,
-                        notes = ?,
-                        max_drawdown = ?,
-                        max_profit = ?
-                    WHERE ticker = ?
-                    AND contract_address = ?
+                        exit_price = %s,
+                        exit_timestamp = %s,
+                        exit_reason = %s,
+                        pnl_amount = %s,
+                        pnl_percentage = %s,
+                        trade_duration = %s,
+                        notes = %s,
+                        max_drawdown = %s,
+                        max_profit = %s
+                    WHERE ticker = %s
+                    AND contract_address = %s
                     AND status = 'Open'
                     """,
                     (

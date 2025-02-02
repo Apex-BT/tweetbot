@@ -95,6 +95,9 @@ class Apexbt:
                     price_data = Codex.get_crypto_price(contract_address, network)
 
                     if price_data and price_data.get("price"):
+                        # Save tweet to both database and sheets
+                        self.save_to_both(tweet, ticker, ticker_status, price_data, tweet.author)
+
                         # Add trade to manager
                         if self.trade_manager.add_trade(
                             ticker,
@@ -114,8 +117,6 @@ class Apexbt:
                 else:
                     logger.warning(f"Could not find token info on DexScreener for {ticker}")
 
-            # Save tweet to both database and sheets
-            self.save_to_both(tweet, ticker, ticker_status, price_data, tweet.author)
 
         except Exception as e:
             logger.error(f"Error processing tweet: {str(e)}")

@@ -10,7 +10,6 @@ class BaseConfig:
     """Base configuration with default values"""
     SPREADSHEET_NAME: str = "ApeXBT"
     HISTORICAL_SPREADSHEET_NAME: str = "ApexBT Historical Data"
-    DATABASE_PATH: str = "apexbt.db"
     HISTORICAL_DATABASE_PATH: str = "apexbt_historical.db"
     TWITTER_USERS: List[str] = field(default_factory=lambda: ["aixbt_agent", "Vader_AI_"])
     STOP_LOSS_PERCENTAGE: float = 0.001
@@ -48,6 +47,12 @@ class Config(BaseConfig):
 
     def _load_secrets(self) -> None:
         """Load all secrets from AWS Secrets Manager"""
+
+        # Load Database URL
+        if db_secret := self._get_secret('DATABASE_CREDENTIALS'):
+            self.DATABASE_URL = db_secret.get('DATABASE_URL')
+        else:
+            print("Warning: Failed to load DATABASE_URL")
 
         # Load CODEX API Key
         if codex_secret := self._get_secret('CODEX_API_KEY'):
@@ -98,7 +103,8 @@ class Config(BaseConfig):
             'SIGNAL_API_BASE_URL',
             'SIGNAL_API_USERNAME',
             'SIGNAL_API_PASSWORD',
-            'SHEETS_CREDENTIALS'
+            'SHEETS_CREDENTIALS',
+            'DATABASE_URL'
         ]
 
         missing_attrs = [
