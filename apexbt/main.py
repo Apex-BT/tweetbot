@@ -2,7 +2,7 @@ import logging
 from apexbt.tweet.tweet import TwitterManager
 from apexbt.database.database import Database
 from apexbt.trade.trade import TradeManager
-from apexbt.sheets.sheets import setup_google_sheets
+from apexbt.sheets.sheets import setup_google_sheets, get_twitter_accounts
 from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
 from apexbt.crypto.codex import Codex
 from apexbt.signal.signal import SignalAPI
@@ -22,6 +22,7 @@ class Apexbt:
         self.trade_agent = None
         self.twitter_manager = None
         self.dex_screener = DexScreener()
+        self.twitter_users = []
 
     def initialize(self):
         """Initialize all components"""
@@ -30,6 +31,15 @@ class Apexbt:
 
         # Initialize Google Sheets
         self.sheets = setup_google_sheets()
+
+        if self.sheets and "accounts" in self.sheets:
+            self.twitter_users = get_twitter_accounts(self.sheets["accounts"])
+            if not self.twitter_users:
+                logger.warning("No Twitter accounts found in Accounts sheet. Using config defaults.")
+                self.twitter_users = config.TWITTER_USERS
+        else:
+            logger.warning("Accounts sheet not available. Using config defaults.")
+            self.twitter_users = config.TWITTER_USERS
 
         # Initialize Twitter manager
         self.twitter_manager = TwitterManager(self.db)
@@ -140,7 +150,7 @@ class Apexbt:
         try:
             # Start monitoring tweets
             self.twitter_manager.monitor_multiple_users(
-                usernames=config.TWITTER_USERS,
+                usernames=self.twitter_users,
                 callback=self.process_new_tweet,
             )
 

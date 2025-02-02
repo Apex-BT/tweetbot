@@ -4,7 +4,11 @@ from apexbt.crypto.codex import Codex
 from apexbt.crypto.dexscreener import DexScreener
 from apexbt.trade.trade import TradeManager
 from apexbt.tweet.tweet import TwitterManager
-from apexbt.sheets.sheets import setup_google_sheets, save_tweet as save_tweet_to_sheets
+from apexbt.sheets.sheets import (
+    setup_google_sheets,
+    save_tweet as save_tweet_to_sheets,
+    get_twitter_accounts
+)
 import time
 import logging
 from apexbt.config.config import config
@@ -20,11 +24,20 @@ class ApexbtHistorical:
         self.trade_manager = None
         self.twitter_manager = None
         self.dex_screener = DexScreener()
+        self.twitter_users = []
 
     def initialize(self):
         """Initialize components"""
         self.db.init_database()
         self.sheets = setup_google_sheets(historical=True)
+        if self.sheets and "accounts" in self.sheets:
+            self.twitter_users = get_twitter_accounts(self.sheets["accounts"])
+            if not self.twitter_users:
+                logger.warning("No Twitter accounts found in Accounts sheet. Using config defaults.")
+                self.twitter_users = config.TWITTER_USERS
+        else:
+            logger.warning("Accounts sheet not available. Using config defaults.")
+            self.twitter_users = config.TWITTER_USERS
         self.twitter_manager = TwitterManager(self.db)
         self.trade_manager = TradeManager(
             db=self.db,
@@ -152,13 +165,13 @@ class ApexbtHistorical:
         if self.twitter_manager.verify_credentials():
             self.trade_manager.start_monitoring(self.sheets)
 
-            for i, username in enumerate(config.TWITTER_USERS, 1):
+            for i, username in enumerate(self.twitter_users, 1):
                 try:
                     self.process_user_historical_tweets(
                         username,
                         start_date,
                         i,
-                        len(config.TWITTER_USERS)
+                        len(self.twitter_users)
                     )
                 except Exception as e:
                     logger.error(

@@ -104,19 +104,31 @@ def setup_google_sheets(historical=False):
     except gspread.exceptions.WorksheetNotFound:
         summary_sheet = spreadsheet.add_worksheet(f"Summary{suffix}", 20, 2)
 
+    try:
+            accounts_sheet = spreadsheet.worksheet("Accounts")
+    except gspread.exceptions.WorksheetNotFound:
+        accounts_sheet = spreadsheet.add_worksheet("Accounts", 100, 1)
+
     # Setup all worksheets with headers
     setup_tweets_worksheet(tweets_sheet)
     setup_trades_worksheet(trades_sheet)
     setup_pnl_worksheet(pnl_sheet)
     setup_agent_summary_worksheet(agent_summary_sheet)
     setup_summary_worksheet(summary_sheet)
+    setup_accounts_worksheet(accounts_sheet)
 
     return {
         "tweets": tweets_sheet,
         "trades": trades_sheet,
         "pnl": pnl_sheet,
         "agent_summary": agent_summary_sheet,
+        "accounts": accounts_sheet,
     }
+
+def setup_accounts_worksheet(sheet):
+    """Setup the accounts worksheet headers"""
+    headers = ["Twitter Handle"]
+    update_worksheet_headers(sheet, headers)
 
 
 def update_worksheet_headers(sheet, headers):
@@ -231,6 +243,23 @@ def setup_summary_worksheet(sheet):
     """Setup the summary worksheet headers"""
     headers = ["Metric", "Value"]
     update_worksheet_headers(sheet, headers)
+
+def get_twitter_accounts(sheet):
+    """Get list of Twitter handles from Accounts sheet"""
+    try:
+        # Get all values from the Accounts sheet
+        values = sheet.get_all_values()
+
+        # Skip header row and filter out empty values
+        accounts = [row[0].strip() for row in values[1:] if row and row[0].strip()]
+
+        # Remove @ symbol if present
+        accounts = [acct.lstrip('@') for acct in accounts]
+
+        return accounts
+    except Exception as e:
+        logger.error(f"Error getting Twitter accounts from sheet: {str(e)}")
+        return []
 
 
 def save_tweet(sheet, tweet, ticker, ticker_status, price_data, ai_agent):

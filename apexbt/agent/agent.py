@@ -55,6 +55,7 @@ class TradeAgent:
             google_api_key=config.GOOGLE_API_KEY,
             temperature=0,
             max_output_tokens=150,
+            convert_system_message_to_human=True
         )
 
         # Initialize rate limiter for 15 requests per minute
