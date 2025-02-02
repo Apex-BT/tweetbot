@@ -5,7 +5,7 @@ from apexbt.trade.trade import TradeManager
 from apexbt.sheets.sheets import setup_google_sheets, get_twitter_accounts
 from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
 from apexbt.crypto.codex import Codex
-from apexbt.signal.signal import SignalAPI
+from apexbt.trade_signal.trade_signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
 from apexbt.crypto.dexscreener import DexScreener
 from apexbt.config.config import config
