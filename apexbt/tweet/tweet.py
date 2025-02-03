@@ -1,11 +1,12 @@
 # apexbt/apexbt/tweet/tweet.py
 import tweepy
 import logging
+import asyncio
 import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from apexbt.config.config import config
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Callable, Any
 import time
 from collections import deque
 from apexbt.database.database import Database
@@ -35,8 +36,8 @@ class RateLimiter:
         except Exception as e:
             logger.error(f"Error parsing rate limit headers: {str(e)}")
 
-    def wait_for_reset(self):
-        """Wait until the rate limit resets based on x-rate-limit-reset"""
+    async def wait_for_reset_async(self):
+        """Async wait until the rate limit resets"""
         if self.reset_time:
             now = time.time()
             wait_time = max(0, self.reset_time - now)
@@ -45,14 +46,13 @@ class RateLimiter:
                     f"Rate limit reached. Waiting {wait_time:.2f} seconds until reset at "
                     f"{datetime.fromtimestamp(self.reset_time).strftime('%Y-%m-%d %H:%M:%S')}"
                 )
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
 
     def can_make_request(self):
         """Check if we can make a request based on headers"""
         if self.remaining_requests is not None:
             return self.remaining_requests > 0
 
-        # Fall back to traditional rate limiting if headers aren't available
         now = time.time()
         while self.requests and self.requests[0] < now - self.time_window:
             self.requests.popleft()
@@ -86,6 +86,7 @@ class TwitterManager:
         self.access_token_secret = config.TWITTER_ACCESS_TOKEN_SECRET
         self.bearer_token = config.TWITTER_BEARER_TOKEN
         self.client = self._setup_client()
+        self.running = True
 
     def _setup_client(self) -> tweepy.Client:
         """Initialize Twitter API client"""
@@ -138,119 +139,92 @@ class TwitterManager:
         else:
             return tickers[0].upper(), "Single ticker"
 
-    def monitor_multiple_users(self, usernames: List[str], callback, delay: int = 60):
-        """Monitor tweets from multiple users with rate limiting"""
-        logger.info(f"Starting tweet monitoring for users: {', '.join(usernames)}")
-        user_ids = {}
-        latest_tweet_ids = {}
-        rate_limiter = RateLimiter(max_requests=900, time_window=15 * 60)
+    async def monitor_multiple_users(
+            self,
+            usernames: List[str],
+            callback: Callable[[MockTweet], Any],
+            delay: int = 60
+        ):
+            """Async monitor tweets from multiple users with rate limiting"""
+            logger.info(f"Starting async tweet monitoring for users: {', '.join(usernames)}")
+            user_ids = {}
+            latest_tweet_ids = {}
+            rate_limiter = RateLimiter(max_requests=900, time_window=15 * 60)
 
-        # Get user IDs for all usernames
-        logger.info("Initializing user IDs and latest tweet IDs...")
-        for username in usernames:
-            user_id = self.get_user_id(username)
-            if user_id:
-                user_ids[username] = user_id
-                latest_tweet_id = self.db.get_latest_tweet_id_by_agent(username)
-                latest_tweet_ids[username] = latest_tweet_id
-                logger.info(
-                    f"Initialized @{username} - User ID: {user_id}, Latest Tweet ID: {latest_tweet_id}"
-                )
-            else:
-                logger.error(f"Could not find user ID for @{username}")
+            # Get user IDs for all usernames
+            logger.info("Initializing user IDs and latest tweet IDs...")
+            for username in usernames:
+                user_id = self.get_user_id(username)
+                if user_id:
+                    user_ids[username] = user_id
+                    latest_tweet_ids[username] = self.db.get_latest_tweet_id_by_agent(username)
+                    logger.info(f"Initialized @{username} - User ID: {user_id}")
+                else:
+                    logger.error(f"Could not find user ID for @{username}")
 
-        logger.info("Beginning monitoring loop...")
-        monitoring_iteration = 0
+            monitoring_iteration = 0
 
-        while True:
-            monitoring_iteration += 1
-            logger.info(f"Starting monitoring iteration {monitoring_iteration}")
+            while self.running:
+                monitoring_iteration += 1
+                logger.info(f"Starting monitoring iteration {monitoring_iteration}")
 
-            try:
-                for username, user_id in user_ids.items():
-                    logger.info(f"Checking tweets for @{username} (User ID: {user_id})")
-                    try:
-                        if not rate_limiter.can_make_request():
-                            logger.info("Rate limit check failed, waiting for reset...")
-                            rate_limiter.wait_for_reset()
+                try:
+                    for username, user_id in user_ids.items():
+                        if not self.running:
+                            break
 
-                        logger.info(
-                            f"Fetching tweets for @{username} since tweet ID: {latest_tweet_ids[username]}"
-                        )
-                        response = self.client.get_users_tweets(
-                            id=user_id,
-                            tweet_fields=["created_at", "referenced_tweets"],
-                            since_id=latest_tweet_ids[username],
-                            max_results=10,
-                            exclude=["replies"],
-                        )
+                        logger.info(f"Checking tweets for @{username}")
+                        try:
+                            if not rate_limiter.can_make_request():
+                                await rate_limiter.wait_for_reset_async()
 
-                        if hasattr(response, "headers"):
-                            logger.info(f"Updating rate limit info for @{username}")
-                            rate_limiter.update_from_headers(response.headers)
-
-                        if response.data:
-                            new_latest_id = response.data[0].id
-                            logger.info(
-                                f"Found {len(response.data)} new tweets for @{username}"
+                            response = self.client.get_users_tweets(
+                                id=user_id,
+                                tweet_fields=["created_at", "referenced_tweets"],
+                                since_id=latest_tweet_ids[username],
+                                max_results=10,
+                                exclude=["replies"],
                             )
-                            logger.info(
-                                f"Updating latest tweet ID for @{username} from {latest_tweet_ids[username]} to {new_latest_id}"
-                            )
-                            latest_tweet_ids[username] = new_latest_id
 
-                            for tweet in response.data:
-                                if (
-                                    hasattr(tweet, "referenced_tweets")
-                                    and tweet.referenced_tweets
-                                ):
-                                    logger.debug(f"Skipping retweet/reply: {tweet.id}")
-                                    continue
+                            if hasattr(response, "headers"):
+                                rate_limiter.update_from_headers(response.headers)
 
-                                logger.info(
-                                    f"Processing tweet {tweet.id} from @{username}"
-                                )
-                                mock_tweet = MockTweet(
-                                    id=tweet.id,
-                                    text=tweet.text,
-                                    created_at=tweet.created_at,
-                                    author=username,
-                                )
-                                logger.info(f"Calling callback for tweet {tweet.id}")
-                                callback(mock_tweet)
-                        else:
-                            logger.info(f"No new tweets found for @{username}")
+                            if response.data:
+                                latest_tweet_ids[username] = response.data[0].id
 
-                        logger.info(f"Waiting 15 seconds before checking next user...")
-                        time.sleep(15)
+                                for tweet in response.data:
+                                    if (
+                                        hasattr(tweet, "referenced_tweets")
+                                        and tweet.referenced_tweets
+                                    ):
+                                        continue
 
-                    except tweepy.errors.TooManyRequests as e:
-                        logger.warning(
-                            f"Rate limit exceeded while processing @{username}"
-                        )
-                        if hasattr(e, "response") and e.response is not None:
-                            logger.info("Updating rate limit info from error response")
-                            rate_limiter.update_from_headers(e.response.headers)
-                        rate_limiter.wait_for_reset()
-                        continue
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing tweets for @{username}: {str(e)}",
-                            exc_info=True,
-                        )
-                        continue
+                                    mock_tweet = MockTweet(
+                                        id=tweet.id,
+                                        text=tweet.text,
+                                        created_at=tweet.created_at,
+                                        author=username,
+                                    )
+                                    await callback(mock_tweet)
 
-                logger.info(
-                    f"Completed iteration {monitoring_iteration}. Waiting {delay} seconds before next iteration..."
-                )
-                time.sleep(delay)
+                            await asyncio.sleep(15)  # Wait between users
 
-            except Exception as e:
-                logger.error(
-                    f"Critical error in monitoring loop: {str(e)}", exc_info=True
-                )
-                logger.info(f"Waiting {delay} seconds before retrying...")
-                time.sleep(delay)
+                        except tweepy.errors.TooManyRequests as e:
+                            logger.warning(f"Rate limit exceeded for @{username}")
+                            if hasattr(e, "response") and e.response is not None:
+                                rate_limiter.update_from_headers(e.response.headers)
+                            await rate_limiter.wait_for_reset_async()
+                            continue
+                        except Exception as e:
+                            logger.error(f"Error processing tweets for @{username}: {str(e)}")
+                            continue
+
+                    logger.info(f"Completed iteration {monitoring_iteration}")
+                    await asyncio.sleep(delay)
+
+                except Exception as e:
+                    logger.error(f"Critical error in monitoring loop: {str(e)}")
+                    await asyncio.sleep(delay)
 
     def fetch_historical_tweets(
         self, username: str, start_date: datetime
