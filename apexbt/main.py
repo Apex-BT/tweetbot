@@ -8,6 +8,7 @@ from apexbt.crypto.codex import Codex
 from apexbt.trade_signal.trade_signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
 from apexbt.crypto.dexscreener import DexScreener
+from apexbt.crypto.token_validator import TokenValidator, ValidationCriteria
 from apexbt.config.config import config
 
 # Set up logging
@@ -56,6 +57,14 @@ class Apexbt:
         # Initialize Trade agent
         self.trade_agent = TradeAgent()
 
+        validation_criteria = ValidationCriteria(
+            min_market_cap=1_000_000,      # $1M minimum
+            max_market_cap=250_000_000,    # $250M maximum
+            min_liquidity=10_000,         # $100K minimum liquidity
+            min_volume_24h=10_000          # $50K minimum 24h volume
+        )
+        self.token_validator = TokenValidator(criteria=validation_criteria)
+
     def process_new_tweet(self, tweet):
         """Process a single new tweet in real-time"""
         try:
@@ -83,6 +92,10 @@ class Apexbt:
                 dex_data = self.dex_screener.get_token_market_data(ticker)
 
                 if dex_data:
+                    is_valid, reason = self.token_validator.validate_token(dex_data)
+                    if not is_valid:
+                        logger.info(f"Token {ticker} validation failed: {reason}")
+                        return
                     contract_address = dex_data.get("contract_address")
                     network = dex_data.get("network")
                     market_cap = dex_data.get("market_cap")
