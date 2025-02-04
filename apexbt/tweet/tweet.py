@@ -139,7 +139,7 @@ class TwitterManager:
         else:
             return tickers[0].upper(), "Single ticker"
 
-    async def monitor_multiple_users(
+    async def monitor(
             self,
             usernames: List[str],
             callback: Callable[[MockTweet], Any],

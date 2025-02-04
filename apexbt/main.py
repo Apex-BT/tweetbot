@@ -237,7 +237,7 @@ class Apexbt:
         try:
             # Create tasks for both Twitter and PumpFun monitoring
             twitter_task = asyncio.create_task(
-                self.twitter_manager.monitor_multiple_users(
+                self.twitter_manager.monitor(
                     usernames=self.twitter_users,
                     callback=self.process_new_tweet,
                 )
