@@ -459,10 +459,12 @@ class TradeManager:
             logger.error(f"Error getting current stats: {str(e)}")
             return []
 
-    def has_open_trade(self, ticker: str) -> bool:
-        """Check if there's already an open trade for the given ticker"""
+    def has_open_trade(self, ticker: str, contract_address: str) -> bool:
+        """Check if there's already an open trade for the given ticker and contract"""
         return any(
-            trade.ticker.lower() == ticker.lower() and trade.status == "Open"
+            (trade.ticker.lower() == ticker.lower() and
+             trade.contract_address.lower() == contract_address.lower() and
+             trade.status == "Open")
             for trade in self.active_trades
         )
 
@@ -478,8 +480,8 @@ class TradeManager:
         market_cap: float = None,
     ) -> bool:
         """Add a new trade, send notification and signal"""
-        if self.has_open_trade(ticker):
-            logger.warning(f"Trade for {ticker} already exists - skipping")
+        if self.has_open_trade(ticker, contract_address):
+            logger.warning(f"Trade for {ticker} ({contract_address}) already exists - skipping")
             return False
 
         if entry_timestamp is None:

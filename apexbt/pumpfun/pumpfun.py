@@ -34,20 +34,14 @@ class PumpFunManager:
         """Process incoming websocket messages"""
         try:
             data = json.loads(message)
-            symbol = data.get('symbol', '')
 
             token_info = {
                 "id": data.get("signature", ""),  # Use signature as ID
-                "text": f"New token detected: {data.get('symbol', '')} - {data.get('name', '')}",
+                "text": f"New token CA detected: {data.get('mint', '')}",
                 "author": "pump.fun",
-                "created_at": "",  # Add timestamp if available in future
-                "token_symbol": symbol,
                 "token_address": data.get("mint"),  # Use mint address as token address
                 "network": "solana",  # PumpFun is Solana-specific
                 "market_cap_sol": data.get("marketCapSol"),
-                "initial_buy": data.get("initialBuy"),
-                "sol_amount": data.get("solAmount"),
-                "token_uri": data.get("uri"),
                 "pool": data.get("pool")
             }
 
