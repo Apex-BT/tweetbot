@@ -422,3 +422,27 @@ class Database:
         except Exception as e:
             logger.error(f"Error loading closed trades: {str(e)}")
             return []
+
+    def get_active_user_trades_with_stop_loss(self):
+        """Get all active user trades with stop loss set"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=DictCursor)
+                cursor.execute("""
+                    SELECT
+                        ut.id,
+                        ut.user_id,
+                        ut.token_address,
+                        ut.chain,
+                        ut.entry_price,
+                        ut.stop_loss_price,
+                        ut.quantity,
+                        ut.status
+                    FROM user_trades ut
+                    WHERE ut.status = 'open'
+                    AND ut.stop_loss_price IS NOT NULL
+                """)
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error fetching user trades with stop loss: {str(e)}")
+            return []

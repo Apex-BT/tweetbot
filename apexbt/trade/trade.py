@@ -113,6 +113,46 @@ class TradeManager:
 
             update_pnl_sheet(sheets["pnl"], stats)
 
+    def check_user_stop_losses(self, token_address: str, current_price: float, network: str):
+        """
+        Check if any user stop losses are hit for a given token
+
+        Args:
+            token_address: Token contract address
+            current_price: Current token price
+            network: Blockchain network
+        """
+        try:
+            # Get all active user trades with stop loss for this token
+            user_trades = self.db.get_active_user_trades_with_stop_loss()
+
+            for trade in user_trades:
+                if (trade['token_address'].lower() == token_address.lower() and
+                    trade['chain'].lower() == network.lower()):
+
+                    # Check if stop loss is hit
+                    if current_price <= trade['stop_loss_price']:
+                        logger.info(f"Stop loss hit for user {trade['user_id']} on {token_address}")
+
+                        # Send sell signal if signal API is configured
+                        if self.signal_api:
+                            signal_response = self.signal_api.send_signal(
+                                token=token_address,
+                                contract=token_address,
+                                signal_from="stop_loss",
+                                chain=network,
+                                tx_type="sell",
+                                user_id=trade['user_id']
+                            )
+
+                            if signal_response:
+                                logger.info(f"Sent sell signal for user {trade['user_id']}")
+                            else:
+                                logger.error(f"Failed to send sell signal for user {trade['user_id']}")
+
+        except Exception as e:
+            logger.error(f"Error checking user stop losses: {str(e)}")
+
     def update_trade_prices(self, sheets=None):
         """Update current prices and PNL in both database and sheets"""
         try:
@@ -138,6 +178,13 @@ class TradeManager:
 
                 if price_data and price_data.get("price"):
                     current_price = float(price_data["price"])
+
+                    # Check user stop losses for this token
+                    self.check_user_stop_losses(
+                        token_address=trade.contract_address,
+                        current_price=current_price,
+                        network=trade.network
+                    )
 
                     # Check stop loss
                     if trade.check_stop_loss(current_price):
@@ -270,39 +317,6 @@ class TradeManager:
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
             logger.exception("Full traceback:")
-
-    def send_trade_signal(
-        self,
-        ticker: str,
-        contract_address: str,
-        entry_price: float,
-        signal_from: str,
-        network: str,
-        market_cap: float = None,  # Add market_cap parameter
-    ):
-        """Send trade signal to signal bot"""
-        if self.historical:
-            return
-
-        try:
-            if self.signal_api:
-                logger.info(f"Sending signal for {ticker} to signal bot...")
-                signal_response = self.signal_api.send_signal(
-                    token=ticker,
-                    contract=contract_address,
-                    entry_price=entry_price,
-                    signal_from=signal_from,
-                    chain=network,
-                    market_cap=market_cap,  # Add market_cap
-                )
-                logger.info(f"Signal API response: {signal_response}")
-                return signal_response
-            else:
-                logger.warning("Signal API not configured")
-                return None
-        except Exception as e:
-            logger.error(f"Error sending trade signal: {str(e)}")
-            return None
 
     def update_trade_ath_and_stop_loss(
         self,
@@ -525,16 +539,17 @@ class TradeManager:
             )
 
             # Only send signals if not historical
-            if not self.historical:
+            if not self.historical and self.signal_api:
                 # Send signal to signal bot
-                self.send_trade_signal(
-                    ticker=ticker,
-                    contract_address=contract_address,
-                    entry_price=entry_price,
+                logger.info(f"Sending signal for {ticker} to signal bot...")
+                signal_response = self.signal_api.send_signal(
+                    token=ticker,
+                    contract=contract_address,
                     signal_from=ai_agent,
-                    network=network,
+                    chain=network,
                     market_cap=market_cap,
                 )
+                logger.info(f"Signal API response: {signal_response}")
 
         return success
 
@@ -570,7 +585,6 @@ class TradeManager:
                 res = self.signal_api.send_signal(
                     token=trade.ticker,
                     contract=trade.contract_address,
-                    entry_price=exit_price,
                     signal_from=trade.ai_agent,
                     chain=trade.network,
                     tx_type="sell",

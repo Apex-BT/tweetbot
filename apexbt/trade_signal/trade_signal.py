@@ -85,11 +85,11 @@ class SignalAPI:
         self,
         token: str,
         contract: str,
-        entry_price: float,
         signal_from: str,
         chain: str,
         tx_type: str = "buy",
-        market_cap: float = None,  # Add market_cap parameter
+        market_cap: float = None,
+        user_id: Optional[int] = None,
     ) -> Optional[Dict]:
         """
         Send a trading signal to the signal bot API
@@ -97,11 +97,11 @@ class SignalAPI:
         Args:
             token (str): Token symbol
             contract (str): Contract address
-            entry_price (float): Entry price
             signal_from (str): Signal source
             chain (str): Blockchain network
             tx_type (str): Transaction type (default: "buy")
             market_cap (float): Market capitalization (optional)
+            user_id (int): User ID for sell transactions (optional)
 
         Returns:
             Optional[Dict]: API response data if successful, None if failed
@@ -115,11 +115,14 @@ class SignalAPI:
             payload = {
                 "token": token,
                 "contract": contract,
-                "entry_price": entry_price,
                 "signal_from": signal_from,
                 "chain": chain.lower(),
                 "tx_type": tx_type,
             }
+
+            # Add user_id to payload if it's a sell transaction and user_id is provided
+            if tx_type.lower() == "sell" and user_id is not None:
+                payload["user_id"] = user_id
 
             # Add market_cap to payload if it exists
             if market_cap is not None:
