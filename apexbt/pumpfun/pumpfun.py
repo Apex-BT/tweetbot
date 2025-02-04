@@ -20,7 +20,7 @@ class PumpFunManager:
 
             # Subscribe to new token events
             payload = {
-                "method": "subscribeNewToken",
+                "method": "subscribeRaydiumLiquidity",
             }
             await self.websocket.send(json.dumps(payload))
             logger.info("Successfully subscribed to PumpFun new token events")
@@ -51,7 +51,7 @@ class PumpFunManager:
                 "pool": data.get("pool")
             }
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
 
             await self.callback(token_info)
 
