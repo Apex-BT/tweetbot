@@ -74,7 +74,6 @@ class Apexbt:
             # Get basic info from token_info
             contract_address = token_info["token_address"]
             network = token_info["network"]
-            symbol = token_info.get("token_symbol", "UNKNOWN")
 
             # Ensure proper timestamp handling
             created_at = token_info.get("created_at")
@@ -92,7 +91,7 @@ class Apexbt:
             # Skip if already processed
             if self.db.is_tweet_processed(token_info["id"], token_info["author"]):
                 logger.info(
-                    f"Token {symbol} from {token_info['author']} already processed, skipping..."
+                    f"Token {contract_address} from {token_info['author']} already processed, skipping..."
                 )
                 return
 
@@ -101,6 +100,7 @@ class Apexbt:
 
             if dex_data:
                 # Validate token
+                symbol = dex_data.get('token_symbol', 'NOT FOUND')
                 is_valid, reason = self.pumpfun_validator.validate_token(dex_data)
                 if not is_valid:
                     logger.info(f"Token {symbol} validation failed: {reason}")
