@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import logging
+from apexbt.crypto.sniffer import SolSnifferAPI
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ class ValidationCriteria:
 class TokenValidator:
     def __init__(self, criteria: ValidationCriteria = None):
         self.criteria = criteria or ValidationCriteria()
+        self.sol_sniffer = SolSnifferAPI()
 
     def validate_token(self, dex_data: dict) -> tuple[bool, str]:
         """
@@ -50,7 +53,6 @@ class TokenValidator:
         """
         if not dex_data:
             return False, "No token data available"
-        print(dex_data)
 
         # Check market cap range
         market_cap = float(dex_data.get("market_cap", 0))
@@ -68,5 +70,27 @@ class TokenValidator:
         volume_24h = float(dex_data.get("volume_24h", 0))
         if volume_24h < self.criteria.min_volume_24h:
             return False, f"24h volume too low: ${volume_24h:,.2f} (min: ${self.criteria.min_volume_24h:,.2f})"
+
+
+        # For PumpFun tokens, validate with SolSniffer first
+        if self.criteria.source == TokenSource.PUMPFUN:
+            token_address = dex_data.get("address")
+            if not token_address:
+                return False, "No token address provided"
+
+            sniffer_data = self.sol_sniffer.get_token_data([token_address])
+            if not sniffer_data or "data" not in sniffer_data:
+                return False, "Failed to fetch token data from SolSniffer"
+
+            # Get the token data for this specific address
+            token_info = next((t for t in sniffer_data["data"]
+                             if t["address"] == token_address), None)
+            if not token_info:
+                return False, "Token not found in SolSniffer response"
+
+            score = token_info["tokenData"].get("score", 0)
+            if score < 80:
+                return False, f"Token score too low: {score} (minimum: 80)"
+
 
         return True, "Token passed all validation criteria"
