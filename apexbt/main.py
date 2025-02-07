@@ -99,6 +99,7 @@ class Apexbt:
             dex_data = self.dex_screener.get_token_by_address(contract_address, network)
 
             if dex_data:
+                dex_data["address"] = contract_address
                 # Validate token
                 symbol = dex_data.get('token_symbol', 'NOT FOUND')
                 is_valid, reason = self.pumpfun_validator.validate_token(dex_data)
