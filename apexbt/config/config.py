@@ -13,8 +13,8 @@ class BaseConfig:
     HISTORICAL_DATABASE_PATH: str = "apexbt_historical.db"
     TWITTER_USERS: List[str] = field(default_factory=lambda: ["aixbt_agent", "Vader_AI_"])
     STOP_LOSS_PERCENTAGE: float = 0.001
-    TRADE_UPDATE_INTERVAL_SECONDS: int = 60
-    MARKET_CAP_FILTER: int = 10000000000000
+    TRADE_UPDATE_INTERVAL_SECONDS: int = 3600
+    MARKET_CAP_FILTER: int = 250000000
 
 class Config(BaseConfig):
     """Configuration class that loads secrets from AWS Secrets Manager"""
