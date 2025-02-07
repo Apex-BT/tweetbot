@@ -90,6 +90,12 @@ class Config(BaseConfig):
         else:
             print("Warning: Failed to load SIGNAL_API_CREDENTIALS")
 
+        # Load SOL Sniffer API Key
+        if sol_sniffer_secret := self._get_secret('SOL_SNIFFER_API_KEY'):
+            self.SOL_SNIFFER_API_KEY = sol_sniffer_secret.get('SOL_SNIFFER_API_KEY')
+        else:
+            print("Warning: Failed to load SOL_SNIFFER_API_KEY")
+
     def validate_config(self) -> None:
         """Validate that all required configurations are present"""
         required_attrs = [
@@ -104,7 +110,8 @@ class Config(BaseConfig):
             'SIGNAL_API_USERNAME',
             'SIGNAL_API_PASSWORD',
             'SHEETS_CREDENTIALS',
-            'DATABASE_URL'
+            'DATABASE_URL',
+            'SOL_SNIFFER_API_KEY'
         ]
 
         missing_attrs = [
