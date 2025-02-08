@@ -4,6 +4,7 @@ import boto3
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 
 @dataclass
 class BaseConfig:
@@ -21,6 +22,7 @@ class Config(BaseConfig):
 
     def __init__(self):
         super().__init__()
+        load_dotenv()
         self._load_secrets()
         self.validate_config()
 
@@ -48,11 +50,20 @@ class Config(BaseConfig):
     def _load_secrets(self) -> None:
         """Load all secrets from AWS Secrets Manager"""
 
-        # Load Database URL
-        if db_secret := self._get_secret('DATABASE_CREDENTIALS'):
-            self.DATABASE_URL = db_secret.get('DATABASE_URL')
+        # Load Database Credentials
+        if db_secret := self._get_secret('rds!db-378e8981-5279-4232-a95f-44cff1bd1aea'):
+            username = db_secret.get('username')
+            password = db_secret.get('password')
+            host = os.getenv('DB_HOST')
+            dbname = os.getenv('DB_NAME')
+            port = os.getenv('DB_PORT')
+
+            if not host or not dbname:
+                raise ValueError("DB_HOST and DB_NAME must be set in .env file")
+
+            self.DATABASE_URL = f"postgresql://{username}:{password}@{host}:{port}/{dbname}"
         else:
-            print("Warning: Failed to load DATABASE_URL")
+            print("Warning: Failed to load DATABASE credentials")
 
         # Load CODEX API Key
         if codex_secret := self._get_secret('CODEX_API_KEY'):
