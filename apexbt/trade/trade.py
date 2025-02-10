@@ -8,6 +8,7 @@ from datetime import datetime
 from apexbt.crypto.codex import Codex
 from apexbt.config.config import config
 from apexbt.database.database import Database
+from apexbt.crypto.sniffer import SolSnifferAPI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,42 +114,104 @@ class TradeManager:
 
             update_pnl_sheet(sheets["pnl"], stats)
 
-    def check_user_stop_losses(self, token_address: str, current_price: float, network: str):
-        """
-        Check if any user stop losses are hit for a given token
+    def get_sniff_data(self, contract_address: str):
+        """Get sniffscore and holder count from SolSniffer API"""
+        try:
+            sniffer = SolSnifferAPI()
+            token_data = sniffer.get_token_data(contract_address)
 
-        Args:
-            token_address: Token contract address
-            current_price: Current token price
-            network: Blockchain network
-        """
+            if token_data and 'tokenData' in token_data:
+                return {
+                    'sniffscore': token_data['tokenData'].get('score'),
+                    'holder_count': len(token_data['tokenData'].get('ownersList', []))
+                }
+        except Exception as e:
+            logger.error(f"Error getting sniff data: {str(e)}")
+
+        return {'sniffscore': None, 'holder_count': None}
+
+    def check_user_take_profits(self, token_address: str, current_price: float, network: str):
+        """Check if any user take profit levels have been hit and send grouped signals"""
+        try:
+            # Get all active user trades with take profit set
+            user_trades = self.db.get_active_user_trades_with_take_profit()
+
+            # Group users hitting take profit for this token
+            triggered_users = []
+
+            for trade in user_trades:
+                if (trade['token_address'].lower() == token_address.lower() and
+                    trade['chain'].lower() == network.lower() and
+                    current_price >= trade['take_profit_price']):
+
+                    triggered_users.append({
+                        'user_id': trade['user_id'],
+                        'amount': trade.get('take_profit_amount')
+                    })
+
+            # If any users hit take profit, send one grouped signal
+            if triggered_users and self.signal_api:
+                user_ids = [user['user_id'] for user in triggered_users]
+                logger.info(f"Take profit hit for users {user_ids} on {token_address}")
+
+                signal_response = self.signal_api.send_signal(
+                    token=token_address,
+                    contract=token_address,
+                    signal_from="take_profit",
+                    chain=network,
+                    tx_type="sell",
+                    user_ids=user_ids,
+                    price=current_price,
+                    trigger_type="take_profit",
+                )
+
+                if signal_response:
+                    logger.info(f"Sent grouped take profit sell signal for users {user_ids}")
+                else:
+                    logger.error(f"Failed to send grouped take profit sell signal for users {user_ids}")
+
+        except Exception as e:
+            logger.error(f"Error checking user take profits: {str(e)}")
+
+    def check_user_stop_losses(self, token_address: str, current_price: float, network: str):
+        """Check if any user stop losses have been hit and send grouped signals"""
         try:
             # Get all active user trades with stop loss for this token
             user_trades = self.db.get_active_user_trades_with_stop_loss()
 
+            # Group users hitting stop loss for this token
+            triggered_users = []
+
             for trade in user_trades:
                 if (trade['token_address'].lower() == token_address.lower() and
-                    trade['chain'].lower() == network.lower()):
+                    trade['chain'].lower() == network.lower() and
+                    current_price <= trade['stop_loss_price']):
 
-                    # Check if stop loss is hit
-                    if current_price <= trade['stop_loss_price']:
-                        logger.info(f"Stop loss hit for user {trade['user_id']} on {token_address}")
+                    triggered_users.append({
+                        'user_id': trade['user_id'],
+                        'amount': trade.get('stop_loss_amount')
+                    })
 
-                        # Send sell signal if signal API is configured
-                        if self.signal_api:
-                            signal_response = self.signal_api.send_signal(
-                                token=token_address,
-                                contract=token_address,
-                                signal_from="stop_loss",
-                                chain=network,
-                                tx_type="sell",
-                                user_id=trade['user_id']
-                            )
+            # If any users hit stop loss, send one grouped signal
+            if triggered_users and self.signal_api:
+                user_ids = [user['user_id'] for user in triggered_users]
+                logger.info(f"Stop loss hit for users {user_ids} on {token_address}")
 
-                            if signal_response:
-                                logger.info(f"Sent sell signal for user {trade['user_id']}")
-                            else:
-                                logger.error(f"Failed to send sell signal for user {trade['user_id']}")
+                signal_response = self.signal_api.send_signal(
+                    token=token_address,
+                    contract=token_address,
+                    signal_from="stop_loss",
+                    chain=network,
+                    tx_type="sell",
+                    user_ids=user_ids,
+                    price=current_price,
+                    trigger_type="stop_loss",
+                )
+
+                if signal_response:
+                    logger.info(f"Sent grouped stop loss sell signal for users {user_ids}")
+                else:
+                    logger.error(f"Failed to send grouped stop loss sell signal for users {user_ids}")
 
         except Exception as e:
             logger.error(f"Error checking user stop losses: {str(e)}")
@@ -179,8 +242,14 @@ class TradeManager:
                 if price_data and price_data.get("price"):
                     current_price = float(price_data["price"])
 
-                    # Check user stop losses for this token
+                    # Check both stop losses and take profits for this token
                     self.check_user_stop_losses(
+                        token_address=trade.contract_address,
+                        current_price=current_price,
+                        network=trade.network
+                    )
+
+                    self.check_user_take_profits(
                         token_address=trade.contract_address,
                         current_price=current_price,
                         network=trade.network
@@ -543,6 +612,7 @@ class TradeManager:
             # Only send signals if not historical
             if not self.historical and self.signal_api:
                 # Send signal to signal bot
+                sniff_data = self.get_sniff_data(contract_address)
                 logger.info(f"Sending signal for {ticker} to signal bot...")
                 signal_response = self.signal_api.send_signal(
                     token=ticker,
@@ -550,6 +620,10 @@ class TradeManager:
                     signal_from=ai_agent,
                     chain=network,
                     market_cap=market_cap,
+                    sniffscore=sniff_data['sniffscore'],
+                    holder_count=sniff_data['holder_count'],
+                    tx_type="buy",
+                    entry_price=entry_price
                 )
                 logger.info(f"Signal API response: {signal_response}")
 
@@ -581,19 +655,6 @@ class TradeManager:
             max_profit = (
                 (trade.ath_price - trade.entry_price) / trade.entry_price
             ) * 100
-
-            # Send sell signal if not in historical mode
-            if not self.historical and self.signal_api:
-                res = self.signal_api.send_signal(
-                    token=trade.ticker,
-                    contract=trade.contract_address,
-                    signal_from=trade.ai_agent,
-                    chain=trade.network,
-                    tx_type="sell",
-                    market_cap=trade.market_cap
-                )
-                logger.info(f"Sent sell signal for {trade.ticker}")
-                logger.info(res)
 
             trade_data = {
                 "exit_price": exit_price,

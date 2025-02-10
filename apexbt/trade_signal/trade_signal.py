@@ -1,6 +1,6 @@
 import logging
 import requests
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from apexbt.config.config import config
 
 logger = logging.getLogger(__name__)
@@ -85,11 +85,17 @@ class SignalAPI:
         self,
         token: str,
         contract: str,
-        signal_from: str,
+        entry_price: float,
         chain: str,
-        tx_type: str = "buy",
-        market_cap: float = None,
-        user_id: Optional[int] = None,
+        tx_type: str,
+        signal_from: Optional[str] = None,
+        market_cap: Optional[str] = None,
+        channel: Optional[str] = "trade_signals",
+        user_ids: Optional[List[str]] = None,
+        price: Optional[float] = None,
+        trigger_type: Optional[str] = None,
+        sniffscore: Optional[float] = None,
+        holder_count: Optional[int] = None,
     ) -> Optional[Dict]:
         """
         Send a trading signal to the signal bot API
@@ -97,11 +103,17 @@ class SignalAPI:
         Args:
             token (str): Token symbol
             contract (str): Contract address
-            signal_from (str): Signal source
+            entry_price (float): Entry price for the trade
+            signal_from (Optional[str]): Signal source
             chain (str): Blockchain network
-            tx_type (str): Transaction type (default: "buy")
-            market_cap (float): Market capitalization (optional)
-            user_id (int): User ID for sell transactions (optional)
+            tx_type (str): Transaction type
+            market_cap (Optional[str]): Market capitalization
+            channel (Optional[str]): Channel to send signal to (default: "trade_signals")
+            user_ids (Optional[List[str]]): List of user IDs
+            price (Optional[float]): Current price
+            trigger_type (Optional[str]): Type of trigger
+            sniffscore (Optional[float]): Sniff score
+            holder_count (Optional[int]): Number of holders
 
         Returns:
             Optional[Dict]: API response data if successful, None if failed
@@ -115,23 +127,27 @@ class SignalAPI:
             payload = {
                 "token": token,
                 "contract": contract,
-                "signal_from": signal_from,
+                "entry_price": entry_price,
                 "chain": chain.lower(),
                 "tx_type": tx_type,
+                "channel": channel,
             }
 
-            # Add user_id to payload if it's a sell transaction and user_id is provided
-            if tx_type.lower() == "sell" and user_id is not None:
-                payload["user_id"] = user_id
-
-            # Add market_cap to payload if it exists
+            # Add optional fields if they exist
+            if signal_from is not None:
+                payload["signal_from"] = signal_from
             if market_cap is not None:
-                # Format market cap to be more readable
-                if market_cap >= 1_000_000:
-                    formatted_mc = f"${market_cap/1_000_000:.2f}M"
-                else:
-                    formatted_mc = f"${market_cap:.2f}"
-                payload["market_cap"] = formatted_mc
+                payload["market_cap"] = market_cap
+            if user_ids is not None:
+                payload["user_ids"] = user_ids
+            if price is not None:
+                payload["price"] = price
+            if trigger_type is not None:
+                payload["trigger_type"] = trigger_type
+            if sniffscore is not None:
+                payload["sniffscore"] = sniffscore
+            if holder_count is not None:
+                payload["holder_count"] = holder_count
 
             response = self.session.post(f"{self.base_url}/signal", json=payload)
 

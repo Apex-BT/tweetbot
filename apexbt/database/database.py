@@ -446,3 +446,28 @@ class Database:
         except Exception as e:
             logger.error(f"Error fetching user trades with stop loss: {str(e)}")
             return []
+
+    def get_active_user_trades_with_take_profit(self):
+        """Get all active user trades with take profit set"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=DictCursor)
+                cursor.execute("""
+                    SELECT
+                        ut.id,
+                        ut.user_id,
+                        ut.token_address,
+                        ut.chain,
+                        ut.entry_price,
+                        ut.take_profit_price,
+                        ut.take_profit_amount,
+                        ut.quantity,
+                        ut.status
+                    FROM user_trades ut
+                    WHERE ut.status = 'open'
+                    AND ut.take_profit_price IS NOT NULL
+                """)
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error fetching user trades with take profit: {str(e)}")
+            return []
