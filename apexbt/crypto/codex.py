@@ -241,6 +241,78 @@ class Codex:
             return None
 
     @staticmethod
+    def get_crypto_prices(token_inputs: List[Dict[str, str]]) -> Optional[List[Dict]]:
+        """
+        Get cryptocurrency prices for multiple tokens using GraphQL
+
+        Args:
+            token_inputs: List of dicts with contract_address and network
+            e.g. [{"contract_address": "0x123...", "network": "ethereum"}, ...]
+        """
+        try:
+            if not token_inputs:
+                logger.error("No token inputs provided")
+                return None
+
+            # Convert inputs to proper format
+            query_inputs = []
+            for token in token_inputs:
+                network_id = Codex.SUPPORTED_NETWORKS.get(token["network"].lower())
+                if network_id:
+                    query_inputs.append({
+                        "address": token["contract_address"],
+                        "networkId": network_id
+                    })
+
+            if not query_inputs:
+                logger.error("No valid token inputs after network validation")
+                return None
+
+            query = """
+            query GetTokenPrices($inputs: [GetPriceInput!]!) {
+                getTokenPrices(inputs: $inputs) {
+                    address
+                    networkId
+                    priceUsd
+                    confidence
+                    poolAddress
+                }
+            }
+            """
+
+            variables = {"inputs": query_inputs}
+
+            Codex.rate_limiter.wait_if_needed()
+            response = Codex.session.post(
+                Codex.base_url, json={"query": query, "variables": variables}
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if "errors" in data:
+                    logger.error(f"GraphQL errors: {data['errors']}")
+                    return None
+
+                prices = data.get("data", {}).get("getTokenPrices", [])
+
+                return [{
+                    "price": float(price.get("priceUsd", 0) or 0),
+                    "confidence": price.get("confidence"),
+                    "pool_address": price.get("poolAddress"),
+                    "network": next(t["network"] for t in token_inputs
+                                  if t["contract_address"].lower() == price["address"].lower()),
+                    "contract_address": price["address"]
+                } for price in prices]
+
+            else:
+                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error getting Codex prices: {str(e)}")
+            return None
+
+    @staticmethod
     def get_historical_prices(
         contract_address: str, timestamps: List[int], network: str = "ethereum"
     ) -> List[Dict]:
