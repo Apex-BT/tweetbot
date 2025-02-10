@@ -362,7 +362,8 @@ class Database:
         """Load closed trades from database"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
+                # Use DictCursor to get results as dictionaries
+                cursor = conn.cursor(cursor_factory=DictCursor)
                 cursor.execute("""
                     SELECT ticker, entry_price, timestamp as entry_timestamp,
                            ai_agent, contract_address, network,
@@ -379,21 +380,19 @@ class Database:
                 for trade in trades:
                     try:
                         entry_timestamp = datetime.strptime(
-                            trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
+                            trade["entry_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                            "%Y-%m-%d %H:%M:%S"
                         )
                     except ValueError:
-                        entry_timestamp = datetime.strptime(
-                            trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S"
-                        )
+                        entry_timestamp = trade["entry_timestamp"]
 
                     try:
                         exit_timestamp = datetime.strptime(
-                            trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
+                            trade["exit_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                            "%Y-%m-%d %H:%M:%S"
                         )
                     except ValueError:
-                        exit_timestamp = datetime.strptime(
-                            trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S"
-                        )
+                        exit_timestamp = trade["exit_timestamp"]
 
                     closed_trades.append({
                         "type": "trade",
@@ -407,7 +406,7 @@ class Database:
                         "current_price": float(trade["exit_price"]),
                         "ath_price": float(trade["ath_price"]) if trade["ath_price"] else float(trade["exit_price"]),
                         "ath_timestamp": trade["ath_timestamp"],
-                        "price_change": f"{trade['pnl_percentage']:.2f}%",
+                        "price_change": f"{float(trade['pnl_percentage']):.2f}%",
                         "invested_amount": 100.0,
                         "current_value": 100.0 * (1 + float(trade["pnl_percentage"]) / 100),
                         "pnl_dollars": float(trade["pnl_amount"]),
