@@ -268,45 +268,55 @@ class Codex:
                 logger.error("No valid token inputs after network validation")
                 return None
 
-            query = """
-            query GetTokenPrices($inputs: [GetPriceInput!]!) {
-                getTokenPrices(inputs: $inputs) {
-                    address
-                    networkId
-                    priceUsd
-                    confidence
-                    poolAddress
+            # Split inputs into batches of 25
+            BATCH_SIZE = 25
+            all_results = []
+
+            for i in range(0, len(query_inputs), BATCH_SIZE):
+                batch = query_inputs[i:i + BATCH_SIZE]
+
+                query = """
+                query GetTokenPrices($inputs: [GetPriceInput!]!) {
+                    getTokenPrices(inputs: $inputs) {
+                        address
+                        networkId
+                        priceUsd
+                        confidence
+                        poolAddress
+                    }
                 }
-            }
-            """
+                """
 
-            variables = {"inputs": query_inputs}
+                variables = {"inputs": batch}
 
-            Codex.rate_limiter.wait_if_needed()
-            response = Codex.session.post(
-                Codex.base_url, json={"query": query, "variables": variables}
-            )
+                Codex.rate_limiter.wait_if_needed()
+                response = Codex.session.post(
+                    Codex.base_url, json={"query": query, "variables": variables}
+                )
 
-            if response.status_code == 200:
-                data = response.json()
-                if "errors" in data:
-                    logger.error(f"GraphQL errors: {data['errors']}")
-                    return None
+                if response.status_code == 200:
+                    data = response.json()
+                    if "errors" in data:
+                        logger.error(f"GraphQL errors: {data['errors']}")
+                        continue
 
-                prices = data.get("data", {}).get("getTokenPrices", [])
+                    prices = data.get("data", {}).get("getTokenPrices", [])
 
-                return [{
-                    "price": float(price.get("priceUsd", 0) or 0),
-                    "confidence": price.get("confidence"),
-                    "pool_address": price.get("poolAddress"),
-                    "network": next(t["network"] for t in token_inputs
-                                  if t["contract_address"].lower() == price["address"].lower()),
-                    "contract_address": price["address"]
-                } for price in prices]
+                    batch_results = [{
+                        "price": float(price.get("priceUsd", 0) or 0),
+                        "confidence": price.get("confidence"),
+                        "pool_address": price.get("poolAddress"),
+                        "network": next(t["network"] for t in token_inputs
+                                     if t["contract_address"].lower() == price["address"].lower()),
+                        "contract_address": price["address"]
+                    } for price in prices]
 
-            else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
-                return None
+                    all_results.extend(batch_results)
+                else:
+                    logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                    continue
+
+            return all_results if all_results else None
 
         except Exception as e:
             logger.error(f"Error getting Codex prices: {str(e)}")
