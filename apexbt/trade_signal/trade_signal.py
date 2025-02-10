@@ -137,7 +137,7 @@ class SignalAPI:
             if signal_from is not None:
                 payload["signal_from"] = signal_from
             if market_cap is not None:
-                payload["market_cap"] = market_cap
+                payload["market_cap"] = str(market_cap)
             if user_ids is not None:
                 payload["user_ids"] = user_ids
             if price is not None:
