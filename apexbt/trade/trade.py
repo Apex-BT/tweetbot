@@ -157,6 +157,7 @@ class TradeManager:
                 signal_response = self.signal_api.send_signal(
                     token=token_address,
                     contract=token_address,
+                    entry_price=current_price,
                     signal_from="take_profit",
                     chain=network,
                     tx_type="sell",
@@ -201,6 +202,7 @@ class TradeManager:
                     token=token_address,
                     contract=token_address,
                     signal_from="stop_loss",
+                    entry_price=current_price,
                     chain=network,
                     tx_type="sell",
                     user_ids=user_ids,
