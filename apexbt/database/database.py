@@ -362,7 +362,8 @@ class Database:
         """Load closed trades from database"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
+                # Use DictCursor to get results as dictionaries
+                cursor = conn.cursor(cursor_factory=DictCursor)
                 cursor.execute("""
                     SELECT ticker, entry_price, timestamp as entry_timestamp,
                            ai_agent, contract_address, network,
@@ -379,21 +380,19 @@ class Database:
                 for trade in trades:
                     try:
                         entry_timestamp = datetime.strptime(
-                            trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
+                            trade["entry_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                            "%Y-%m-%d %H:%M:%S"
                         )
                     except ValueError:
-                        entry_timestamp = datetime.strptime(
-                            trade["entry_timestamp"], "%Y-%m-%d %H:%M:%S"
-                        )
+                        entry_timestamp = trade["entry_timestamp"]
 
                     try:
                         exit_timestamp = datetime.strptime(
-                            trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S.%f"
+                            trade["exit_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                            "%Y-%m-%d %H:%M:%S"
                         )
                     except ValueError:
-                        exit_timestamp = datetime.strptime(
-                            trade["exit_timestamp"], "%Y-%m-%d %H:%M:%S"
-                        )
+                        exit_timestamp = trade["exit_timestamp"]
 
                     closed_trades.append({
                         "type": "trade",
@@ -407,7 +406,7 @@ class Database:
                         "current_price": float(trade["exit_price"]),
                         "ath_price": float(trade["ath_price"]) if trade["ath_price"] else float(trade["exit_price"]),
                         "ath_timestamp": trade["ath_timestamp"],
-                        "price_change": f"{trade['pnl_percentage']:.2f}%",
+                        "price_change": f"{float(trade['pnl_percentage']):.2f}%",
                         "invested_amount": 100.0,
                         "current_value": 100.0 * (1 + float(trade["pnl_percentage"]) / 100),
                         "pnl_dollars": float(trade["pnl_amount"]),
@@ -421,4 +420,53 @@ class Database:
 
         except Exception as e:
             logger.error(f"Error loading closed trades: {str(e)}")
+            return []
+
+    def get_active_user_trades_with_stop_loss(self):
+        """Get all active user trades with stop loss set"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=DictCursor)
+                cursor.execute("""
+                    SELECT
+                        ut.id,
+                        ut.user_id,
+                        ut.token_address,
+                        ut.chain,
+                        ut.entry_price,
+                        ut.stop_loss_price,
+                        ut.quantity,
+                        ut.status
+                    FROM user_trades ut
+                    WHERE ut.status = 'open'
+                    AND ut.stop_loss_price IS NOT NULL
+                """)
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error fetching user trades with stop loss: {str(e)}")
+            return []
+
+    def get_active_user_trades_with_take_profit(self):
+        """Get all active user trades with take profit set"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=DictCursor)
+                cursor.execute("""
+                    SELECT
+                        ut.id,
+                        ut.user_id,
+                        ut.token_address,
+                        ut.chain,
+                        ut.entry_price,
+                        ut.take_profit_price,
+                        ut.take_profit_amount,
+                        ut.quantity,
+                        ut.status
+                    FROM user_trades ut
+                    WHERE ut.status = 'open'
+                    AND ut.take_profit_price IS NOT NULL
+                """)
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error fetching user trades with take profit: {str(e)}")
             return []

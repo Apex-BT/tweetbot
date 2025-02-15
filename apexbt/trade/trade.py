@@ -8,6 +8,7 @@ from datetime import datetime
 from apexbt.crypto.codex import Codex
 from apexbt.config.config import config
 from apexbt.database.database import Database
+from apexbt.crypto.sniffer import SolSnifferAPI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,6 +114,110 @@ class TradeManager:
 
             update_pnl_sheet(sheets["pnl"], stats)
 
+    def get_sniff_data(self, contract_address: str):
+        """Get sniffscore and holder count from SolSniffer API"""
+        try:
+            sniffer = SolSnifferAPI()
+            token_data = sniffer.get_token_data(contract_address)
+
+            if token_data and 'tokenData' in token_data:
+                return {
+                    'sniffscore': token_data['tokenData'].get('score'),
+                    'holder_count': len(token_data['tokenData'].get('ownersList', []))
+                }
+        except Exception as e:
+            logger.error(f"Error getting sniff data: {str(e)}")
+
+        return {'sniffscore': None, 'holder_count': None}
+
+    def check_user_take_profits(self, token_address: str, current_price: float, network: str):
+        """Check if any user take profit levels have been hit and send grouped signals"""
+        try:
+            # Get all active user trades with take profit set
+            user_trades = self.db.get_active_user_trades_with_take_profit()
+
+            # Group users hitting take profit for this token
+            triggered_users = []
+
+            for trade in user_trades:
+                if (trade['token_address'].lower() == token_address.lower() and
+                    trade['chain'].lower() == network.lower() and
+                    current_price >= trade['take_profit_price']):
+
+                    triggered_users.append({
+                        'user_id': trade['user_id'],
+                        'amount': trade.get('take_profit_amount')
+                    })
+
+            # If any users hit take profit, send one grouped signal
+            if triggered_users and self.signal_api:
+                user_ids = [user['user_id'] for user in triggered_users]
+                logger.info(f"Take profit hit for users {user_ids} on {token_address}")
+
+                signal_response = self.signal_api.send_signal(
+                    token=token_address,
+                    contract=token_address,
+                    entry_price=current_price,
+                    signal_from="take_profit",
+                    chain=network,
+                    tx_type="sell",
+                    user_ids=user_ids,
+                    price=current_price,
+                    trigger_type="take_profit",
+                )
+
+                if signal_response:
+                    logger.info(f"Sent grouped take profit sell signal for users {user_ids}")
+                else:
+                    logger.error(f"Failed to send grouped take profit sell signal for users {user_ids}")
+
+        except Exception as e:
+            logger.error(f"Error checking user take profits: {str(e)}")
+
+    def check_user_stop_losses(self, token_address: str, current_price: float, network: str):
+        """Check if any user stop losses have been hit and send grouped signals"""
+        try:
+            # Get all active user trades with stop loss for this token
+            user_trades = self.db.get_active_user_trades_with_stop_loss()
+
+            # Group users hitting stop loss for this token
+            triggered_users = []
+
+            for trade in user_trades:
+                if (trade['token_address'].lower() == token_address.lower() and
+                    trade['chain'].lower() == network.lower() and
+                    current_price <= trade['stop_loss_price']):
+
+                    triggered_users.append({
+                        'user_id': trade['user_id'],
+                        'amount': trade.get('stop_loss_amount')
+                    })
+
+            # If any users hit stop loss, send one grouped signal
+            if triggered_users and self.signal_api:
+                user_ids = [user['user_id'] for user in triggered_users]
+                logger.info(f"Stop loss hit for users {user_ids} on {token_address}")
+
+                signal_response = self.signal_api.send_signal(
+                    token=token_address,
+                    contract=token_address,
+                    signal_from="stop_loss",
+                    entry_price=current_price,
+                    chain=network,
+                    tx_type="sell",
+                    user_ids=user_ids,
+                    price=current_price,
+                    trigger_type="stop_loss",
+                )
+
+                if signal_response:
+                    logger.info(f"Sent grouped stop loss sell signal for users {user_ids}")
+                else:
+                    logger.error(f"Failed to send grouped stop loss sell signal for users {user_ids}")
+
+        except Exception as e:
+            logger.error(f"Error checking user stop losses: {str(e)}")
+
     def update_trade_prices(self, sheets=None):
         """Update current prices and PNL in both database and sheets"""
         try:
@@ -121,102 +226,127 @@ class TradeManager:
             grand_total = {"invested_amount": 0, "current_value": 0, "pnl_dollars": 0}
             current_time = datetime.now()
 
-            # Track trades that need updating in sheets
             trades_to_update = []
             trades_to_exit = []
 
             # Get closed trades first
             closed_trades = self.db.load_closed_trades()
 
-            # Process all active trades first before any updates
-            trades_to_process = self.active_trades.copy()
+            # Prepare batch price request
+            token_inputs = [
+                {
+                    "contract_address": trade.contract_address,
+                    "network": trade.network
+                }
+                for trade in self.active_trades
+            ]
 
-            for trade in trades_to_process:
-                price_data = Codex.get_crypto_price(
-                    contract_address=trade.contract_address, network=trade.network
-                )
+            # Get all prices in one batch request
+            price_results = Codex.get_crypto_prices(token_inputs)
 
-                if price_data and price_data.get("price"):
-                    current_price = float(price_data["price"])
+            if price_results:
+                price_lookup = {
+                            price["contract_address"].lower(): price
+                            for price in price_results
+                        }
 
-                    # Check stop loss
-                    if trade.check_stop_loss(current_price):
-                        trades_to_exit.append(
+                for trade in self.active_trades:
+                    price_data = price_lookup.get(trade.contract_address.lower())
+
+                    if price_data and price_data.get("price"):
+                        current_price = price_data["price"]
+
+                        # Check both stop losses and take profits for this token
+                        self.check_user_stop_losses(
+                            token_address=trade.contract_address,
+                            current_price=current_price,
+                            network=trade.network
+                        )
+
+                        self.check_user_take_profits(
+                            token_address=trade.contract_address,
+                            current_price=current_price,
+                            network=trade.network
+                        )
+
+                        # Check stop loss
+                        if trade.check_stop_loss(current_price):
+                            trades_to_exit.append(
+                                {
+                                    "ticker": trade.ticker,
+                                    "contract_address": trade.contract_address,
+                                    "entry_price": trade.entry_price,
+                                    "exit_price": current_price,
+                                    "stop_loss": trade.stop_loss,
+                                    "ath_price": trade.ath_price,
+                                    "pnl_amount": 100
+                                    * ((current_price / trade.entry_price) - 1),
+                                    "pnl_percentage": (
+                                        (current_price / trade.entry_price) - 1
+                                    )
+                                    * 100,
+                                    "ai_agent": trade.ai_agent,
+                                    "network": trade.network,
+                                    "duration": current_time - trade.entry_timestamp,
+                                }
+                            )
+                            continue
+
+                        # Check and update ATH if necessary
+                        ath_updated = trade.update_ath(current_price, current_time)
+                        if ath_updated:
+                            trades_to_update.append(
+                                {
+                                    "ticker": trade.ticker,
+                                    "contract_address": trade.contract_address,
+                                    "ath_price": trade.ath_price,
+                                    "ath_timestamp": trade.ath_timestamp,
+                                    "stop_loss": trade.stop_loss,
+                                }
+                            )
+
+                        # Calculate statistics
+                        price_change = (
+                            (current_price - trade.entry_price) / trade.entry_price
+                        ) * 100
+                        invested_amount = 100.0
+                        current_value = invested_amount * (1 + price_change / 100)
+                        pnl = current_value - invested_amount
+
+                        # Add trade stats
+                        stats.append(
                             {
-                                "ticker": trade.ticker,
-                                "contract_address": trade.contract_address,
-                                "entry_price": trade.entry_price,
-                                "exit_price": current_price,
-                                "stop_loss": trade.stop_loss,
-                                "ath_price": trade.ath_price,
-                                "pnl_amount": 100
-                                * ((current_price / trade.entry_price) - 1),
-                                "pnl_percentage": (
-                                    (current_price / trade.entry_price) - 1
-                                )
-                                * 100,
+                                "type": "trade",
                                 "ai_agent": trade.ai_agent,
-                                "network": trade.network,
-                                "duration": current_time - trade.entry_timestamp,
-                            }
-                        )
-                        continue
-
-                    # Check and update ATH if necessary
-                    ath_updated = trade.update_ath(current_price, current_time)
-                    if ath_updated:
-                        trades_to_update.append(
-                            {
                                 "ticker": trade.ticker,
-                                "contract_address": trade.contract_address,
+                                "entry_time": trade.entry_timestamp.strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                ),
+                                "entry_price": trade.entry_price,
+                                "current_price": current_price,
                                 "ath_price": trade.ath_price,
-                                "ath_timestamp": trade.ath_timestamp,
-                                "stop_loss": trade.stop_loss,
+                                "ath_timestamp": trade.ath_timestamp.strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                ),
+                                "price_change": f"{price_change:.2f}%",
+                                "invested_amount": invested_amount,
+                                "current_value": current_value,
+                                "pnl_dollars": pnl,
+                                "contract_address": trade.contract_address,
+                                "status": "Open",
                             }
                         )
 
-                    # Calculate statistics
-                    price_change = (
-                        (current_price - trade.entry_price) / trade.entry_price
-                    ) * 100
-                    invested_amount = 100.0
-                    current_value = invested_amount * (1 + price_change / 100)
-                    pnl = current_value - invested_amount
-
-                    # Add trade stats
-                    stats.append(
-                        {
-                            "type": "trade",
-                            "ai_agent": trade.ai_agent,
-                            "ticker": trade.ticker,
-                            "entry_time": trade.entry_timestamp.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                            "entry_price": trade.entry_price,
-                            "current_price": current_price,
-                            "ath_price": trade.ath_price,
-                            "ath_timestamp": trade.ath_timestamp.strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                            "price_change": f"{price_change:.2f}%",
-                            "invested_amount": invested_amount,
-                            "current_value": current_value,
-                            "pnl_dollars": pnl,
-                            "contract_address": trade.contract_address,
-                            "status": "Open",
-                        }
-                    )
-
-                    # Update agent totals
-                    if trade.ai_agent not in agent_totals:
-                        agent_totals[trade.ai_agent] = {
-                            "invested_amount": 0,
-                            "current_value": 0,
-                            "pnl_dollars": 0,
-                        }
-                    agent_totals[trade.ai_agent]["invested_amount"] += invested_amount
-                    agent_totals[trade.ai_agent]["current_value"] += current_value
-                    agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
+                        # Update agent totals
+                        if trade.ai_agent not in agent_totals:
+                            agent_totals[trade.ai_agent] = {
+                                "invested_amount": 0,
+                                "current_value": 0,
+                                "pnl_dollars": 0,
+                            }
+                        agent_totals[trade.ai_agent]["invested_amount"] += invested_amount
+                        agent_totals[trade.ai_agent]["current_value"] += current_value
+                        agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
 
             # Add closed trades to stats
             stats.extend(closed_trades)
@@ -237,7 +367,7 @@ class TradeManager:
             # Process any trades that need to be exited
             for trade in trades_to_exit:
                 self.exit_trade(
-                    next(t for t in trades_to_process if t.ticker == trade["ticker"]),
+                    next(t for t in self.active_trades if t.ticker == trade["ticker"]),
                     trade["exit_price"],
                     "Stop Loss",
                 )
@@ -270,39 +400,6 @@ class TradeManager:
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
             logger.exception("Full traceback:")
-
-    def send_trade_signal(
-        self,
-        ticker: str,
-        contract_address: str,
-        entry_price: float,
-        signal_from: str,
-        network: str,
-        market_cap: float = None,  # Add market_cap parameter
-    ):
-        """Send trade signal to signal bot"""
-        if self.historical:
-            return
-
-        try:
-            if self.signal_api:
-                logger.info(f"Sending signal for {ticker} to signal bot...")
-                signal_response = self.signal_api.send_signal(
-                    token=ticker,
-                    contract=contract_address,
-                    entry_price=entry_price,
-                    signal_from=signal_from,
-                    chain=network,
-                    market_cap=market_cap,  # Add market_cap
-                )
-                logger.info(f"Signal API response: {signal_response}")
-                return signal_response
-            else:
-                logger.warning("Signal API not configured")
-                return None
-        except Exception as e:
-            logger.error(f"Error sending trade signal: {str(e)}")
-            return None
 
     def update_trade_ath_and_stop_loss(
         self,
@@ -527,16 +624,22 @@ class TradeManager:
             )
 
             # Only send signals if not historical
-            if not self.historical:
+            if not self.historical and self.signal_api:
                 # Send signal to signal bot
-                self.send_trade_signal(
-                    ticker=ticker,
-                    contract_address=contract_address,
-                    entry_price=entry_price,
+                sniff_data = self.get_sniff_data(contract_address)
+                logger.info(f"Sending signal for {ticker} to signal bot...")
+                signal_response = self.signal_api.send_signal(
+                    token=ticker,
+                    contract=contract_address,
                     signal_from=ai_agent,
-                    network=network,
+                    chain=network,
                     market_cap=market_cap,
+                    sniffscore=sniff_data['sniffscore'],
+                    holder_count=sniff_data['holder_count'],
+                    tx_type="buy",
+                    entry_price=entry_price
                 )
+                logger.info(f"Signal API response: {signal_response}")
 
         return success
 
@@ -566,20 +669,6 @@ class TradeManager:
             max_profit = (
                 (trade.ath_price - trade.entry_price) / trade.entry_price
             ) * 100
-
-            # Send sell signal if not in historical mode
-            if not self.historical and self.signal_api:
-                res = self.signal_api.send_signal(
-                    token=trade.ticker,
-                    contract=trade.contract_address,
-                    entry_price=exit_price,
-                    signal_from=trade.ai_agent,
-                    chain=trade.network,
-                    tx_type="sell",
-                    market_cap=trade.market_cap
-                )
-                logger.info(f"Sent sell signal for {trade.ticker}")
-                logger.info(res)
 
             trade_data = {
                 "exit_price": exit_price,

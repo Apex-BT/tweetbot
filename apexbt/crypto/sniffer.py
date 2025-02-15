@@ -15,19 +15,25 @@ class SolSnifferAPI:
             'Content-Type': 'application/json'
         }
 
-    def get_token_data(self, addresses: list[str]) -> Optional[dict]:
+    def get_token_data(self, address: str) -> Optional[dict]:
         """
-        Get token data from SolSniffer API
+        Get token data from SolSniffer API for a single token address
         Returns None if request fails
+
+        Args:
+            address (str): The token address to query
+
+        Returns:
+            Optional[dict]: Token data or None if request fails
         """
         try:
-            response = requests.post(
-                f"{self.BASE_URL}/tokens",
-                headers=self.headers,
-                json={"addresses": addresses}
+            response = requests.get(
+                f"{self.BASE_URL}/token/{address}",
+                headers=self.headers
             )
             response.raise_for_status()
             return response.json()
         except Exception as e:
             logger.error(f"Error fetching token data from SolSniffer: {e}")
             return None
+
