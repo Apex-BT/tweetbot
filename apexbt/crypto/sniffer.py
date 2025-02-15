@@ -36,3 +36,4 @@ class SolSnifferAPI:
         except Exception as e:
             logger.error(f"Error fetching token data from SolSniffer: {e}")
             return None
+
