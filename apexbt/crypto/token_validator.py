@@ -11,6 +11,7 @@ from enum import Enum
 class TokenSource(Enum):
     TWITTER = "twitter"
     PUMPFUN = "pumpfun"
+    VIRTUALS = "virtuals"
 
 @dataclass
 class ValidationCriteria:
@@ -40,6 +41,17 @@ class ValidationCriteria:
             min_liquidity=0,        # $5K minimum initial liquidity
             min_volume_24h=1_000,       # $1K minimum initial volume
             source=TokenSource.PUMPFUN
+        )
+
+    @classmethod
+    def virtuals_default(cls) -> 'ValidationCriteria':
+        """Default criteria for Virtuals tokens"""
+        return cls(
+            min_market_cap=0,           # No minimum since it might be new
+            max_market_cap=1_000_000_000,  # $1B maximum
+            min_liquidity=10_000,       # $10K minimum liquidity
+            min_volume_24h=5_000,       # $5K minimum 24h volume
+            source=TokenSource.VIRTUALS
         )
 
 class TokenValidator:

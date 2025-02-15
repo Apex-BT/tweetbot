@@ -12,6 +12,7 @@ from apexbt.crypto.dexscreener import DexScreener
 from apexbt.crypto.token_validator import TokenValidator, ValidationCriteria
 from apexbt.config.config import config
 from apexbt.pumpfun.pumpfun import PumpFunManager
+from apexbt.virtuals.virtuals import VirtualsManager
 from datetime import datetime
 
 # Set up logging
@@ -26,8 +27,12 @@ class Apexbt:
         self.trade_agent = None
         self.twitter_manager = None
         self.pumpfun_manager = None
+        self.virtuals_manager = None
         self.dex_screener = DexScreener()
         self.twitter_users = []
+        self.twitter_validator = None
+        self.pumpfun_validator = None
+        self.virtuals_validator = None
 
     def initialize(self):
         """Initialize all components"""
@@ -52,6 +57,9 @@ class Apexbt:
         # Initialize PumpFun manager
         self.pumpfun_manager = PumpFunManager(callback=self.process_new_token)
 
+        # Initialize Virtuals manager
+        self.virtuals_manager = VirtualsManager(callback=self.process_new_token)
+
         # Initialize Trade manager and Signal API
         self.trade_manager = TradeManager(
                     db=self.db,
@@ -67,6 +75,7 @@ class Apexbt:
         # Create two validators with different criteria
         self.twitter_validator = TokenValidator(criteria=ValidationCriteria.twitter_default())
         self.pumpfun_validator = TokenValidator(criteria=ValidationCriteria.pumpfun_default())
+        self.virtuals_validator = TokenValidator(criteria=ValidationCriteria.virtuals_default())
 
     async def process_new_token(self, token_info):
         """Process new tokens from PumpFun"""
@@ -74,6 +83,7 @@ class Apexbt:
             # Get basic info from token_info
             contract_address = token_info["token_address"]
             network = token_info["network"]
+            symbol = token_info.get("symbol", "UNKNOWN")
 
             # Ensure proper timestamp handling
             created_at = token_info.get("created_at")
@@ -100,9 +110,18 @@ class Apexbt:
 
             if dex_data:
                 dex_data["address"] = contract_address
+                # Select appropriate validator based on author
+                if token_info["author"] == "pump.fun":
+                    validator = self.pumpfun_validator
+                elif token_info["author"] == "virtuals":
+                    validator = self.virtuals_validator
+                else:
+                    logger.warning(f"Unknown token source: {token_info['author']}")
+                    return
+
                 # Validate token
                 symbol = dex_data.get('token_symbol', 'NOT FOUND')
-                is_valid, reason = self.pumpfun_validator.validate_token(dex_data)
+                is_valid, reason = validator.validate_token(dex_data)
                 if not is_valid:
                     logger.info(f"Token {symbol} validation failed: {reason}")
                     return
@@ -246,17 +265,21 @@ class Apexbt:
 
             pumpfun_task = asyncio.create_task(self.pumpfun_manager.monitor())
 
+            virtuals_task = asyncio.create_task(self.virtuals_manager.monitor())
+
             # Wait for both tasks
-            await asyncio.gather(twitter_task, pumpfun_task)
+            await asyncio.gather(twitter_task, pumpfun_task, virtuals_task)
 
         except KeyboardInterrupt:
             logger.info("Monitoring stopped by user")
             self.trade_manager.stop_monitoring()
             self.pumpfun_manager.stop()
+            self.virtuals_manager.stop()
         except Exception as e:
             logger.error(f"An error occurred: {str(e)}")
             self.trade_manager.stop_monitoring()
             self.pumpfun_manager.stop()
+            self.virtuals_manager.stop()
 
     def run(self):
         """Main execution method"""
