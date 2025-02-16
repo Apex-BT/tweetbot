@@ -119,9 +119,18 @@ class TradeManager:
         try:
             # Ensure contract_address is a string
             if isinstance(contract_address, list):
-                contract_address = contract_address[0]  # Take first address if it's a list
+                # Take first address if it's a list
+                contract_address = contract_address[0] if contract_address else None
+                if not contract_address:
+                    logger.error("Empty contract address list provided")
+                    return {'sniffscore': None, 'holder_count': None}
             elif not isinstance(contract_address, str):
                 contract_address = str(contract_address)
+
+            # Validate contract address
+            if not contract_address:
+                logger.error("Invalid contract address provided")
+                return {'sniffscore': None, 'holder_count': None}
 
             sniffer = SolSnifferAPI()
             token_data = sniffer.get_token_data(contract_address)

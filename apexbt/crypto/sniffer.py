@@ -27,8 +27,13 @@ class SolSnifferAPI:
             Optional[dict]: Token data or None if request fails
         """
         try:
-            # Clean the address - remove any brackets, quotes, or whitespace
-            clean_address = address.strip("[]'\" ").replace("'", "")
+            # Validate input
+            if not isinstance(address, str):
+                logger.error(f"Invalid address type: {type(address)}")
+                return None
+
+            # Clean the address
+            clean_address = address.strip()
 
             # Validate address format
             if not clean_address:
