@@ -117,6 +117,12 @@ class TradeManager:
     def get_sniff_data(self, contract_address: str):
         """Get sniffscore and holder count from SolSniffer API"""
         try:
+            # Ensure contract_address is a string
+            if isinstance(contract_address, list):
+                contract_address = contract_address[0]  # Take first address if it's a list
+            elif not isinstance(contract_address, str):
+                contract_address = str(contract_address)
+
             sniffer = SolSnifferAPI()
             token_data = sniffer.get_token_data(contract_address)
 
