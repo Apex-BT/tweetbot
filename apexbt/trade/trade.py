@@ -561,6 +561,7 @@ class TradeManager:
         network: str = "ethereum",
         entry_timestamp: datetime = None,
         market_cap: float = None,
+        holder_count: int = None,
     ) -> bool:
         """Add a new trade, send notification and signal"""
         if self.has_open_trade(ticker, contract_address):
@@ -626,7 +627,11 @@ class TradeManager:
             # Only send signals if not historical
             if not self.historical and self.signal_api:
                 # Send signal to signal bot
-                sniff_data = self.get_sniff_data(contract_address)
+                sniff_score = -1
+                if ai_agent.lower() == "pump.fun":
+                        sniff_data = self.get_sniff_data(contract_address)
+                        sniff_score = sniff_data['sniffscore']
+
                 logger.info(f"Sending signal for {ticker} to signal bot...")
                 signal_response = self.signal_api.send_signal(
                     token=ticker,
@@ -634,8 +639,8 @@ class TradeManager:
                     signal_from=ai_agent,
                     chain=network,
                     market_cap=market_cap,
-                    sniffscore=sniff_data['sniffscore'],
-                    holder_count=sniff_data['holder_count'],
+                    sniffscore=sniff_score,
+                    holder_count=holder_count,
                     tx_type="buy",
                     entry_price=entry_price
                 )

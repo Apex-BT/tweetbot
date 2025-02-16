@@ -48,9 +48,9 @@ class ValidationCriteria:
         """Default criteria for Virtuals tokens"""
         return cls(
             min_market_cap=0,           # No minimum since it might be new
-            max_market_cap=1_000_000_000,  # $1B maximum
-            min_liquidity=10_000,       # $10K minimum liquidity
-            min_volume_24h=5_000,       # $5K minimum 24h volume
+            max_market_cap=100_000_000_000,  # $100B maximum
+            min_liquidity=0,       # $10K minimum liquidity
+            min_volume_24h=0,       # $5K minimum 24h volume
             source=TokenSource.VIRTUALS
         )
 

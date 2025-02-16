@@ -392,3 +392,87 @@ class Codex:
         except Exception as e:
             logger.error(f"Error getting historical prices: {str(e)}")
             return None
+
+    @staticmethod
+    def get_token_holders(
+        contract_address: str,
+        network: str = "ethereum",
+        cursor: str = None,
+        limit: int = 100
+    ) -> Optional[Dict]:
+        """
+        Get token holders using GraphQL
+
+        Args:
+            contract_address: The token contract address
+            network: Network name (ethereum, arbitrum, base, solana)
+            cursor: Pagination cursor for subsequent requests
+            limit: Number of holders to return per request
+
+        Returns:
+            Dictionary containing holders data, count, and cursor for pagination
+        """
+        try:
+            network_id = Codex.SUPPORTED_NETWORKS.get(network.lower())
+            if not network_id:
+                logger.error(f"Unsupported network: {network}")
+                return None
+
+            # Construct the token ID in format "address:networkId"
+            token_id = f"{contract_address}:{network_id}"
+
+            query = """
+            query Holders($input: HoldersInput!) {
+                holders(input: $input) {
+                    items {
+                        walletId
+                        tokenId
+                        balance
+                        shiftedBalance
+                    }
+                    count
+                    cursor
+                    status
+                }
+            }
+            """
+
+            variables = {
+                "input": {
+                    "tokenId": token_id,
+                    "cursor": cursor,
+                    "limit": limit
+                }
+            }
+
+            Codex.rate_limiter.wait_if_needed()
+            response = Codex.session.post(
+                Codex.base_url,
+                json={"query": query, "variables": variables}
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if "errors" in data:
+                    logger.error(f"GraphQL errors: {data['errors']}")
+                    return None
+
+                holders_data = data.get("data", {}).get("holders")
+                if not holders_data:
+                    logger.warning(f"No holders data returned for {contract_address}")
+                    return None
+
+                return {
+                    "holders": holders_data.get("items", []),
+                    "total_count": holders_data.get("count"),
+                    "next_cursor": holders_data.get("cursor"),
+                    "status": holders_data.get("status"),
+                    "token_id": token_id
+                }
+            else:
+                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error getting token holders for {contract_address}: {str(e)}")
+            return None

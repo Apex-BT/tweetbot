@@ -128,6 +128,15 @@ class Apexbt:
 
                 market_cap = dex_data.get("market_cap")
 
+                # Get holders data from Codex
+                holders_data = Codex.get_token_holders(
+                    contract_address=contract_address,
+                    network=network,
+                    limit=1  # We only need the total count
+                )
+
+                holder_count = holders_data.get("total_count", 0) if holders_data else 0
+
                 # Get price data from Codex
                 price_data = Codex.get_crypto_price(contract_address, network)
 
@@ -158,7 +167,8 @@ class Apexbt:
                         token_info["author"],
                         network,
                         entry_timestamp=token_info["created_at"],
-                        market_cap=market_cap
+                        market_cap=market_cap,
+                        holder_count=holder_count
                     ):
                         logger.info(
                             f"Opened new trade for {symbol} at {price_data['price']}"
@@ -213,6 +223,13 @@ class Apexbt:
                     # Use contract info to get current price from Codex
                     price_data = Codex.get_crypto_price(contract_address, network)
 
+                    holders_data = Codex.get_token_holders(
+                        contract_address=contract_address,
+                        network=network,
+                        limit=1
+                    )
+                    holder_count = holders_data.get("total_count", 0) if holders_data else 0
+
                     if price_data and price_data.get("price"):
                         # Save tweet to both database and sheets
                         self.save_to_both(tweet, ticker, ticker_status, price_data, tweet.author)
@@ -227,6 +244,7 @@ class Apexbt:
                             network,
                             entry_timestamp=tweet.created_at,
                             market_cap=market_cap,
+                            holder_count=holder_count
                         ):
                             logger.info(
                                 f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"
