@@ -398,7 +398,7 @@ class Codex:
         contract_address: str,
         network: str = "ethereum",
         cursor: str = None,
-        limit: int = 100
+        sort: str = None
     ) -> Optional[Dict]:
         """
         Get token holders using GraphQL
@@ -407,10 +407,15 @@ class Codex:
             contract_address: The token contract address
             network: Network name (ethereum, arbitrum, base, solana)
             cursor: Pagination cursor for subsequent requests
-            limit: Number of holders to return per request
+            sort: Sort direction for holders list
 
         Returns:
-            Dictionary containing holders data, count, and cursor for pagination
+            Dictionary containing:
+            - holders: List of wallet balances
+            - total_count: Total number of unique holders
+            - next_cursor: Cursor for pagination
+            - status: Holder status
+            - top10_holders_percent: Percentage held by top 10 holders
         """
         try:
             network_id = Codex.SUPPORTED_NETWORKS.get(network.lower())
@@ -433,16 +438,22 @@ class Codex:
                     count
                     cursor
                     status
+                    top10HoldersPercent
                 }
             }
             """
 
+            # Construct input object according to API spec
+            input_vars = {
+                "tokenId": token_id
+            }
+            if cursor:
+                input_vars["cursor"] = cursor
+            if sort:
+                input_vars["sort"] = sort
+
             variables = {
-                "input": {
-                    "tokenId": token_id,
-                    "cursor": cursor,
-                    "limit": limit
-                }
+                "input": input_vars
             }
 
             Codex.rate_limiter.wait_if_needed()
@@ -467,6 +478,7 @@ class Codex:
                     "total_count": holders_data.get("count"),
                     "next_cursor": holders_data.get("cursor"),
                     "status": holders_data.get("status"),
+                    "top10_holders_percent": holders_data.get("top10HoldersPercent"),
                     "token_id": token_id
                 }
             else:
