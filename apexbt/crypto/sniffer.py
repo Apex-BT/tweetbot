@@ -27,13 +27,27 @@ class SolSnifferAPI:
             Optional[dict]: Token data or None if request fails
         """
         try:
+            # Clean the address - remove any brackets, quotes, or whitespace
+            clean_address = address.strip("[]'\" ").replace("'", "")
+
+            # Validate address format
+            if not clean_address:
+                logger.error("Empty address provided")
+                return None
+
+            url = f"{self.BASE_URL}/token/{clean_address}"
+            logger.debug(f"Making request to: {url}")
+
             response = requests.get(
-                f"{self.BASE_URL}/token/{address}",
+                url,
                 headers=self.headers
             )
             response.raise_for_status()
             return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error fetching token data from SolSniffer: {e}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching token data from SolSniffer: {e}")
             return None
-
