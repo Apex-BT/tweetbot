@@ -132,7 +132,6 @@ class Apexbt:
                 holders_data = Codex.get_token_holders(
                     contract_address=contract_address,
                     network=network,
-                    limit=1  # We only need the total count
                 )
 
                 holder_count = holders_data.get("total_count", 0) if holders_data else 0
@@ -226,7 +225,6 @@ class Apexbt:
                     holders_data = Codex.get_token_holders(
                         contract_address=contract_address,
                         network=network,
-                        limit=1
                     )
                     holder_count = holders_data.get("total_count", 0) if holders_data else 0
 
