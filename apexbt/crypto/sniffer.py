@@ -28,6 +28,7 @@ class SolSnifferAPI:
         """
         try:
             # Validate input
+            logger.info(f"Validating address: {address}")
             if not isinstance(address, str):
                 logger.error(f"Invalid address type: {type(address)}")
                 return None
