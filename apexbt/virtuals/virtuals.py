@@ -5,6 +5,7 @@ from apexbt.crypto.virtualsSDK import VirtualsSDK
 
 logger = logging.getLogger(__name__)
 
+
 class VirtualsManager:
     def __init__(self, callback: Callable):
         self.callback = callback
@@ -13,17 +14,19 @@ class VirtualsManager:
         self.check_interval = 60  # Check every x seconds
 
     async def monitor(self):
-            """Monitor for new virtual tokens"""
-            logger.info("Starting Virtuals monitoring...")
-            self.running = True
+        """Monitor for new virtual tokens"""
+        logger.info("Starting Virtuals monitoring...")
+        self.running = True
 
-            while self.running:
-                try:
-                    await self.process_new_tokens()
-                    await asyncio.sleep(self.check_interval)
-                except Exception as e:
-                    logger.error(f"Error in Virtuals monitoring loop: {str(e)}")
-                    await asyncio.sleep(self.check_interval)  # Still sleep on error to prevent tight loop
+        while self.running:
+            try:
+                await self.process_new_tokens()
+                await asyncio.sleep(self.check_interval)
+            except Exception as e:
+                logger.error(f"Error in Virtuals monitoring loop: {str(e)}")
+                await asyncio.sleep(
+                    self.check_interval
+                )  # Still sleep on error to prevent tight loop
 
     def stop(self):
         """Stop the monitoring process"""
@@ -53,7 +56,7 @@ class VirtualsManager:
             "socials": token["socials"],
             "image_url": token["image_url"],
             "created_at": token["created_at"],
-            "raw_data": token
+            "raw_data": token,
         }
 
     async def process_new_tokens(self):
@@ -61,12 +64,10 @@ class VirtualsManager:
         try:
             # Get both sentient and prototype listings
             sentient_result = self.sdk_client.get_sentient_listing()
-            prototype_result = self.sdk_client.get_prototype_listing()
 
             # Process new tokens from both listings
             for token_list in [
-                sentient_result.get('tokens', []),
-                prototype_result.get('tokens', [])
+                sentient_result.get("tokens", []),
             ]:
                 for token in token_list:
                     token_info = self._create_token_info(token)
