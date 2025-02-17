@@ -91,7 +91,7 @@ class TokenValidator:
             if not token_address:
                 return False, "No token address provided"
 
-            sniffer_data = self.sol_sniffer.get_token_data([token_address])
+            sniffer_data = self.sol_sniffer.get_token_data(token_address)
             if not sniffer_data or "data" not in sniffer_data:
                 return False, "Failed to fetch token data from SolSniffer"
 
