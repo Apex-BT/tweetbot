@@ -33,7 +33,7 @@ class SolSnifferAPI:
                 return None
 
             url = f"{self.BASE_URL}/token/{address}"
-            logger.debug(f"Making request to: {url}")
+            logger.info(f"Making request to: {url}")
 
             response = requests.get(
                 url,

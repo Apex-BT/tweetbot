@@ -117,7 +117,7 @@ class TradeManager:
     def get_sniff_data(self, contract_address: str):
         """Get sniffscore and holder count from SolSniffer API"""
         try:
-            print(contract_address)
+            logger.info("Getting sniff data for", contract_address)
             # Validate contract address
             if not contract_address:
                 logger.error("Invalid contract address provided")
@@ -635,7 +635,7 @@ class TradeManager:
                 # Send signal to signal bot
                 sniff_score = -1
                 if ai_agent.lower() == "pump.fun":
-                        print(contract_address)
+                        logger.info("SNIFFER", contract_address)
                         sniff_data = self.get_sniff_data(contract_address)
                         sniff_score = sniff_data['sniffscore']
 
