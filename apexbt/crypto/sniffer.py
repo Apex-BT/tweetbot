@@ -32,7 +32,7 @@ class SolSnifferAPI:
                 logger.error(f"Invalid address type: {type(address)}")
                 return None
 
-            url = f"{self.BASE_URL}/token/{clean_address}"
+            url = f"{self.BASE_URL}/token/{address}"
             logger.debug(f"Making request to: {url}")
 
             response = requests.get(
