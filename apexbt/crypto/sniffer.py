@@ -32,14 +32,6 @@ class SolSnifferAPI:
                 logger.error(f"Invalid address type: {type(address)}")
                 return None
 
-            # Clean the address
-            clean_address = address.strip()
-
-            # Validate address format
-            if not clean_address:
-                logger.error("Empty address provided")
-                return None
-
             url = f"{self.BASE_URL}/token/{clean_address}"
             logger.debug(f"Making request to: {url}")
 

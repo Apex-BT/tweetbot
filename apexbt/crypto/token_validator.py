@@ -85,25 +85,5 @@ class TokenValidator:
             return False, f"24h volume too low: ${volume_24h:,.2f} (min: ${self.criteria.min_volume_24h:,.2f})"
 
 
-        # For PumpFun tokens, validate with SolSniffer first
-        if self.criteria.source == TokenSource.PUMPFUN:
-            token_address = dex_data.get("address")
-            if not token_address:
-                return False, "No token address provided"
-
-            sniffer_data = self.sol_sniffer.get_token_data([token_address])
-            if not sniffer_data or "data" not in sniffer_data:
-                return False, "Failed to fetch token data from SolSniffer"
-
-            # Get the token data for this specific address
-            token_info = next((t for t in sniffer_data["data"]
-                             if t["address"] == token_address), None)
-            if not token_info:
-                return False, "Token not found in SolSniffer response"
-
-            score = token_info["tokenData"].get("score", 0)
-            if score < 80:
-                return False, f"Token score too low: {score} (minimum: 80)"
-
 
         return True, "Token passed all validation criteria"
