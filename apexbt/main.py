@@ -19,6 +19,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class Apexbt:
     def __init__(self):
         self.db = Database()
@@ -45,7 +46,9 @@ class Apexbt:
         if self.sheets and "accounts" in self.sheets:
             self.twitter_users = get_twitter_accounts(self.sheets["accounts"])
             if not self.twitter_users:
-                logger.warning("No Twitter accounts found in Accounts sheet. Using config defaults.")
+                logger.warning(
+                    "No Twitter accounts found in Accounts sheet. Using config defaults."
+                )
                 self.twitter_users = config.TWITTER_USERS
         else:
             logger.warning("Accounts sheet not available. Using config defaults.")
@@ -62,9 +65,8 @@ class Apexbt:
 
         # Initialize Trade manager and Signal API
         self.trade_manager = TradeManager(
-                    db=self.db,
-                    update_interval=config.TRADE_UPDATE_INTERVAL_SECONDS
-                )
+            db=self.db, update_interval=config.TRADE_UPDATE_INTERVAL_SECONDS
+        )
         SignalAPI.initialize(config.SIGNAL_API_USERNAME, config.SIGNAL_API_PASSWORD)
         signal_api = SignalAPI()
         self.trade_manager.set_signal_api(signal_api)
@@ -73,9 +75,15 @@ class Apexbt:
         self.trade_agent = TradeAgent()
 
         # Create two validators with different criteria
-        self.twitter_validator = TokenValidator(criteria=ValidationCriteria.twitter_default())
-        self.pumpfun_validator = TokenValidator(criteria=ValidationCriteria.pumpfun_default())
-        self.virtuals_validator = TokenValidator(criteria=ValidationCriteria.virtuals_default())
+        self.twitter_validator = TokenValidator(
+            criteria=ValidationCriteria.twitter_default()
+        )
+        self.pumpfun_validator = TokenValidator(
+            criteria=ValidationCriteria.pumpfun_default()
+        )
+        self.virtuals_validator = TokenValidator(
+            criteria=ValidationCriteria.virtuals_default()
+        )
 
     async def process_new_token(self, token_info):
         """Process new tokens from PumpFun"""
@@ -120,7 +128,7 @@ class Apexbt:
                     return
 
                 # Validate token
-                symbol = dex_data.get('token_symbol', 'NOT FOUND')
+                symbol = dex_data.get("token_symbol", "NOT FOUND")
                 is_valid, reason = validator.validate_token(dex_data)
                 if not is_valid:
                     logger.info(f"Token {symbol} validation failed: {reason}")
@@ -145,7 +153,7 @@ class Apexbt:
                         id=token_info["id"],
                         text=token_info["text"],
                         created_at=token_info["created_at"],
-                        author=token_info["author"]
+                        author=token_info["author"],
                     )
 
                     # Save to database and sheets
@@ -154,7 +162,7 @@ class Apexbt:
                         symbol,
                         "Single ticker",
                         price_data,
-                        token_info["author"]
+                        token_info["author"],
                     )
 
                     # Add trade
@@ -167,7 +175,7 @@ class Apexbt:
                         network,
                         entry_timestamp=token_info["created_at"],
                         market_cap=market_cap,
-                        holder_count=holder_count
+                        holder_count=holder_count,
                     ):
                         logger.info(
                             f"Opened new trade for {symbol} at {price_data['price']}"
@@ -226,11 +234,15 @@ class Apexbt:
                         contract_address=contract_address,
                         network=network,
                     )
-                    holder_count = holders_data.get("total_count", 0) if holders_data else 0
+                    holder_count = (
+                        holders_data.get("total_count", 0) if holders_data else 0
+                    )
 
                     if price_data and price_data.get("price"):
                         # Save tweet to both database and sheets
-                        self.save_to_both(tweet, ticker, ticker_status, price_data, tweet.author)
+                        self.save_to_both(
+                            tweet, ticker, ticker_status, price_data, tweet.author
+                        )
 
                         # Add trade to manager
                         if self.trade_manager.add_trade(
@@ -242,7 +254,7 @@ class Apexbt:
                             network,
                             entry_timestamp=tweet.created_at,
                             market_cap=market_cap,
-                            holder_count=holder_count
+                            holder_count=holder_count,
                         ):
                             logger.info(
                                 f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"
@@ -250,8 +262,9 @@ class Apexbt:
                     else:
                         logger.warning(f"No price data found from Codex for {ticker}")
                 else:
-                    logger.warning(f"Could not find token info on DexScreener for {ticker}")
-
+                    logger.warning(
+                        f"Could not find token info on DexScreener for {ticker}"
+                    )
 
         except Exception as e:
             logger.error(f"Error processing tweet: {str(e)}")
@@ -271,19 +284,14 @@ class Apexbt:
         logger.info("Trade manager started successfully")
 
         try:
-            # Create tasks for both Twitter and PumpFun monitoring
             twitter_task = asyncio.create_task(
                 self.twitter_manager.monitor(
                     usernames=self.twitter_users,
                     callback=self.process_new_tweet,
                 )
             )
-
             pumpfun_task = asyncio.create_task(self.pumpfun_manager.monitor())
-
             virtuals_task = asyncio.create_task(self.virtuals_manager.monitor())
-
-            # Wait for both tasks
             await asyncio.gather(twitter_task, pumpfun_task, virtuals_task)
 
         except KeyboardInterrupt:
@@ -308,9 +316,15 @@ class Apexbt:
 
         # Save to Google Sheets if available
         if self.sheets and "tweets" in self.sheets:
-         save_tweet_to_sheets(
-             self.sheets["tweets"], tweet, ticker, ticker_status, price_data, ai_agent
-         )
+            save_tweet_to_sheets(
+                self.sheets["tweets"],
+                tweet,
+                ticker,
+                ticker_status,
+                price_data,
+                ai_agent,
+            )
+
 
 def main():
     apexbt = Apexbt()

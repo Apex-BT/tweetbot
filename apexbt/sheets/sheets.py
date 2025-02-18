@@ -49,6 +49,7 @@ class RateLimiter:
 # Create a global rate limiter instance
 sheet_rate_limiter = RateLimiter(max_requests_per_minute=50)  # Conservative limit
 
+
 def setup_google_sheets(historical=False):
     """Setup Google Sheets connection with multiple worksheets"""
     scope = [
@@ -105,7 +106,7 @@ def setup_google_sheets(historical=False):
         summary_sheet = spreadsheet.add_worksheet(f"Summary{suffix}", 20, 2)
 
     try:
-            accounts_sheet = spreadsheet.worksheet("Accounts")
+        accounts_sheet = spreadsheet.worksheet("Accounts")
     except gspread.exceptions.WorksheetNotFound:
         accounts_sheet = spreadsheet.add_worksheet("Accounts", 100, 1)
 
@@ -124,6 +125,7 @@ def setup_google_sheets(historical=False):
         "agent_summary": agent_summary_sheet,
         "accounts": accounts_sheet,
     }
+
 
 def setup_accounts_worksheet(sheet):
     """Setup the accounts worksheet headers"""
@@ -244,6 +246,7 @@ def setup_summary_worksheet(sheet):
     headers = ["Metric", "Value"]
     update_worksheet_headers(sheet, headers)
 
+
 def get_twitter_accounts(sheet):
     """Get list of Twitter handles from Accounts sheet"""
     try:
@@ -254,7 +257,7 @@ def get_twitter_accounts(sheet):
         accounts = [row[0].strip() for row in values[1:] if row and row[0].strip()]
 
         # Remove @ symbol if present
-        accounts = [acct.lstrip('@') for acct in accounts]
+        accounts = [acct.lstrip("@") for acct in accounts]
 
         return accounts
     except Exception as e:
@@ -1054,7 +1057,9 @@ def update_agent_summary(sheet, stats):
             # Only process each unique trade once
             if trade_id not in processed_trades:
                 processed_trades.add(trade_id)
-                agent_stats[agent]["qualified_tweets"] += 1  # Each unique trade represents a qualified tweet
+                agent_stats[agent][
+                    "qualified_tweets"
+                ] += 1  # Each unique trade represents a qualified tweet
 
             try:
                 # Process PNL and trade data
@@ -1108,7 +1113,9 @@ def update_agent_summary(sheet, stats):
                 continue
 
         # Process tweet statistics (only for total and single ticker tweets)
-        tweets_sheet = spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Tweets"))
+        tweets_sheet = spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Tweets")
+        )
         tweet_values = tweets_sheet.get_all_values()
         tweet_headers = tweet_values[0]
 
@@ -1178,7 +1185,9 @@ def update_agent_summary(sheet, stats):
             logger.info("Agent summary updated successfully")
 
         # Update summary sheet
-        summary_sheet = sheet.spreadsheet.worksheet(sheet.title.replace("AgentSummary", "Summary"))
+        summary_sheet = sheet.spreadsheet.worksheet(
+            sheet.title.replace("AgentSummary", "Summary")
+        )
         update_summary_sheet(summary_sheet, agent_stats, pnl_sheet)
 
     except Exception as e:

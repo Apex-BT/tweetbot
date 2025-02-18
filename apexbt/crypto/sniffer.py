@@ -5,14 +5,15 @@ from config.config import config
 
 logger = logging.getLogger(__name__)
 
+
 class SolSnifferAPI:
     BASE_URL = "https://solsniffer.com/api/v2"
 
     def __init__(self):
         self.headers = {
-            'accept': 'application/json',
-            'X-API-KEY': config.SOL_SNIFFER_API_KEY,
-            'Content-Type': 'application/json'
+            "accept": "application/json",
+            "X-API-KEY": config.SOL_SNIFFER_API_KEY,
+            "Content-Type": "application/json",
         }
 
     def get_token_data(self, address: str) -> Optional[dict]:
@@ -35,10 +36,7 @@ class SolSnifferAPI:
             url = f"{self.BASE_URL}/token/{address}"
             logger.debug(f"Making request to: {url}")
 
-            response = requests.get(
-                url,
-                headers=self.headers
-            )
+            response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             return response.json()
 

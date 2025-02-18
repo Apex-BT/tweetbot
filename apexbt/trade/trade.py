@@ -120,22 +120,24 @@ class TradeManager:
             # Validate contract address
             if not contract_address:
                 logger.error("Invalid contract address provided")
-                return {'sniffscore': None, 'holder_count': None}
+                return {"sniffscore": None, "holder_count": None}
 
             sniffer = SolSnifferAPI()
             token_data = sniffer.get_token_data(contract_address)
 
-            if token_data and 'tokenData' in token_data:
+            if token_data and "tokenData" in token_data:
                 return {
-                    'sniffscore': token_data['tokenData'].get('score'),
-                    'holder_count': len(token_data['tokenData'].get('ownersList', []))
+                    "sniffscore": token_data["tokenData"].get("score"),
+                    "holder_count": len(token_data["tokenData"].get("ownersList", [])),
                 }
         except Exception as e:
             logger.error(f"Error getting sniff data: {str(e)}")
 
-        return {'sniffscore': None, 'holder_count': None}
+        return {"sniffscore": None, "holder_count": None}
 
-    def check_user_take_profits(self, token_address: str, current_price: float, network: str):
+    def check_user_take_profits(
+        self, token_address: str, current_price: float, network: str
+    ):
         """Check if any user take profit levels have been hit and send grouped signals"""
         try:
             # Get all active user trades with take profit set
@@ -145,18 +147,22 @@ class TradeManager:
             triggered_users = []
 
             for trade in user_trades:
-                if (trade['token_address'].lower() == token_address.lower() and
-                    trade['chain'].lower() == network.lower() and
-                    current_price >= trade['take_profit_price']):
+                if (
+                    trade["token_address"].lower() == token_address.lower()
+                    and trade["chain"].lower() == network.lower()
+                    and current_price >= trade["take_profit_price"]
+                ):
 
-                    triggered_users.append({
-                        'user_id': trade['user_id'],
-                        'amount': trade.get('take_profit_amount')
-                    })
+                    triggered_users.append(
+                        {
+                            "user_id": trade["user_id"],
+                            "amount": trade.get("take_profit_amount"),
+                        }
+                    )
 
             # If any users hit take profit, send one grouped signal
             if triggered_users and self.signal_api:
-                user_ids = [user['user_id'] for user in triggered_users]
+                user_ids = [user["user_id"] for user in triggered_users]
                 logger.info(f"Take profit hit for users {user_ids} on {token_address}")
 
                 signal_response = self.signal_api.send_signal(
@@ -172,14 +178,20 @@ class TradeManager:
                 )
 
                 if signal_response:
-                    logger.info(f"Sent grouped take profit sell signal for users {user_ids}")
+                    logger.info(
+                        f"Sent grouped take profit sell signal for users {user_ids}"
+                    )
                 else:
-                    logger.error(f"Failed to send grouped take profit sell signal for users {user_ids}")
+                    logger.error(
+                        f"Failed to send grouped take profit sell signal for users {user_ids}"
+                    )
 
         except Exception as e:
             logger.error(f"Error checking user take profits: {str(e)}")
 
-    def check_user_stop_losses(self, token_address: str, current_price: float, network: str):
+    def check_user_stop_losses(
+        self, token_address: str, current_price: float, network: str
+    ):
         """Check if any user stop losses have been hit and send grouped signals"""
         try:
             # Get all active user trades with stop loss for this token
@@ -189,18 +201,22 @@ class TradeManager:
             triggered_users = []
 
             for trade in user_trades:
-                if (trade['token_address'].lower() == token_address.lower() and
-                    trade['chain'].lower() == network.lower() and
-                    current_price <= trade['stop_loss_price']):
+                if (
+                    trade["token_address"].lower() == token_address.lower()
+                    and trade["chain"].lower() == network.lower()
+                    and current_price <= trade["stop_loss_price"]
+                ):
 
-                    triggered_users.append({
-                        'user_id': trade['user_id'],
-                        'amount': trade.get('stop_loss_amount')
-                    })
+                    triggered_users.append(
+                        {
+                            "user_id": trade["user_id"],
+                            "amount": trade.get("stop_loss_amount"),
+                        }
+                    )
 
             # If any users hit stop loss, send one grouped signal
             if triggered_users and self.signal_api:
-                user_ids = [user['user_id'] for user in triggered_users]
+                user_ids = [user["user_id"] for user in triggered_users]
                 logger.info(f"Stop loss hit for users {user_ids} on {token_address}")
 
                 signal_response = self.signal_api.send_signal(
@@ -216,9 +232,13 @@ class TradeManager:
                 )
 
                 if signal_response:
-                    logger.info(f"Sent grouped stop loss sell signal for users {user_ids}")
+                    logger.info(
+                        f"Sent grouped stop loss sell signal for users {user_ids}"
+                    )
                 else:
-                    logger.error(f"Failed to send grouped stop loss sell signal for users {user_ids}")
+                    logger.error(
+                        f"Failed to send grouped stop loss sell signal for users {user_ids}"
+                    )
 
         except Exception as e:
             logger.error(f"Error checking user stop losses: {str(e)}")
@@ -239,10 +259,7 @@ class TradeManager:
 
             # Prepare batch price request
             token_inputs = [
-                {
-                    "contract_address": trade.contract_address,
-                    "network": trade.network
-                }
+                {"contract_address": trade.contract_address, "network": trade.network}
                 for trade in self.active_trades
             ]
 
@@ -251,9 +268,8 @@ class TradeManager:
 
             if price_results:
                 price_lookup = {
-                            price["contract_address"].lower(): price
-                            for price in price_results
-                        }
+                    price["contract_address"].lower(): price for price in price_results
+                }
 
                 for trade in self.active_trades:
                     price_data = price_lookup.get(trade.contract_address.lower())
@@ -265,13 +281,13 @@ class TradeManager:
                         self.check_user_stop_losses(
                             token_address=trade.contract_address,
                             current_price=current_price,
-                            network=trade.network
+                            network=trade.network,
                         )
 
                         self.check_user_take_profits(
                             token_address=trade.contract_address,
                             current_price=current_price,
-                            network=trade.network
+                            network=trade.network,
                         )
 
                         # Check stop loss
@@ -349,7 +365,9 @@ class TradeManager:
                                 "current_value": 0,
                                 "pnl_dollars": 0,
                             }
-                        agent_totals[trade.ai_agent]["invested_amount"] += invested_amount
+                        agent_totals[trade.ai_agent][
+                            "invested_amount"
+                        ] += invested_amount
                         agent_totals[trade.ai_agent]["current_value"] += current_value
                         agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
 
@@ -469,7 +487,9 @@ class TradeManager:
                 current_price = position["current_price"]
                 ath_price = position["ath_price"]
                 stop_loss = ath_price * config.STOP_LOSS_PERCENTAGE
-                from_ath = ((current_price - ath_price) / ath_price * 100) if ath_price else 0
+                from_ath = (
+                    ((current_price - ath_price) / ath_price * 100) if ath_price else 0
+                )
                 to_stop_loss = (current_price - stop_loss) / current_price * 100
 
                 # Format market cap
@@ -550,9 +570,11 @@ class TradeManager:
     def has_open_trade(self, ticker: str, contract_address: str) -> bool:
         """Check if there's already an open trade for the given ticker and contract"""
         return any(
-            (trade.ticker.lower() == ticker.lower() and
-             trade.contract_address.lower() == contract_address.lower() and
-             trade.status == "Open")
+            (
+                trade.ticker.lower() == ticker.lower()
+                and trade.contract_address.lower() == contract_address.lower()
+                and trade.status == "Open"
+            )
             for trade in self.active_trades
         )
 
@@ -570,7 +592,9 @@ class TradeManager:
     ) -> bool:
         """Add a new trade, send notification and signal"""
         if self.has_open_trade(ticker, contract_address):
-            logger.warning(f"Trade for {ticker} ({contract_address}) already exists - skipping")
+            logger.warning(
+                f"Trade for {ticker} ({contract_address}) already exists - skipping"
+            )
             return False
 
         if entry_timestamp is None:
@@ -625,7 +649,7 @@ class TradeManager:
                     ai_agent=ai_agent,
                     contract_address=contract_address,
                     network=network,
-                    market_cap=market_cap
+                    market_cap=market_cap,
                 )
             )
 
@@ -634,8 +658,8 @@ class TradeManager:
                 # Send signal to signal bot
                 sniff_score = -1
                 if ai_agent.lower() == "pump.fun":
-                        sniff_data = self.get_sniff_data(contract_address)
-                        sniff_score = sniff_data['sniffscore']
+                    sniff_data = self.get_sniff_data(contract_address)
+                    sniff_score = sniff_data["sniffscore"]
 
                 logger.info(f"Sending signal for {ticker} to signal bot...")
                 signal_response = self.signal_api.send_signal(
@@ -647,7 +671,7 @@ class TradeManager:
                     sniffscore=sniff_score,
                     holder_count=holder_count,
                     tx_type="buy",
-                    entry_price=entry_price
+                    entry_price=entry_price,
                 )
                 logger.info(f"Signal API response: {signal_response}")
 
@@ -708,6 +732,7 @@ class TradeManager:
                     "pnl_percentage": pnl_percentage,
                 }
                 from apexbt.sheets.sheets import update_trade_exit
+
                 update_trade_exit(self.sheets["trades"], exit_data)
 
             # Remove from active trades list

@@ -3,7 +3,8 @@ from requests import Session
 import requests
 from datetime import timedelta, datetime, timezone
 import time
-COINMARKETCAP_API_KEY=""
+
+COINMARKETCAP_API_KEY = ""
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

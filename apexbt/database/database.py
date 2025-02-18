@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+
 class Database:
     def __init__(self, historical=False):
         self.historical = historical
@@ -33,7 +34,8 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS tweets (
                     tweet_id TEXT PRIMARY KEY,
                     ai_agent TEXT,
@@ -53,9 +55,11 @@ class Database:
                     contract_address TEXT,
                     last_updated TIMESTAMP
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS trades (
                     trade_id TEXT PRIMARY KEY,
                     ai_agent TEXT,
@@ -84,9 +88,11 @@ class Database:
                     market_cap DECIMAL,
                     FOREIGN KEY(tweet_id) REFERENCES tweets(tweet_id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS pnl (
                     id SERIAL PRIMARY KEY,
                     ai_agent TEXT,
@@ -100,7 +106,8 @@ class Database:
                     pnl DECIMAL,
                     contract_address TEXT
                 )
-            """)
+            """
+            )
 
             conn.commit()
 
@@ -169,12 +176,14 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(cursor_factory=DictCursor)
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT ticker, entry_price, timestamp, ai_agent,
                            contract_address, network, market_cap
                     FROM trades
                     WHERE status = 'Open'
-                """)
+                """
+                )
                 trades = cursor.fetchall()
 
                 active_trades = []
@@ -182,24 +191,26 @@ class Database:
                     try:
                         entry_timestamp = datetime.strptime(
                             trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S.%f"),
-                            "%Y-%m-%d %H:%M:%S.%f"
+                            "%Y-%m-%d %H:%M:%S.%f",
                         )
                     except ValueError:
                         entry_timestamp = datetime.strptime(
                             trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                            "%Y-%m-%d %H:%M:%S"
+                            "%Y-%m-%d %H:%M:%S",
                         )
 
-                    active_trades.append({
-                        "ticker": trade["ticker"],
-                        "entry_price": float(trade["entry_price"]),
-                        "entry_timestamp": entry_timestamp,
-                        "ai_agent": trade["ai_agent"],
-                        "contract_address": trade["contract_address"],
-                        "network": trade["network"],
-                        "market_cap": trade["market_cap"],
-                        "status": "Open",
-                    })
+                    active_trades.append(
+                        {
+                            "ticker": trade["ticker"],
+                            "entry_price": float(trade["entry_price"]),
+                            "entry_timestamp": entry_timestamp,
+                            "ai_agent": trade["ai_agent"],
+                            "contract_address": trade["contract_address"],
+                            "network": trade["network"],
+                            "market_cap": trade["market_cap"],
+                            "status": "Open",
+                        }
+                    )
 
                 return active_trades
 
@@ -329,7 +340,8 @@ class Database:
         """Get comprehensive trade statistics"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            return cursor.execute("""
+            return cursor.execute(
+                """
                 SELECT
                     COUNT(*) as total_trades,
                     SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed_trades,
@@ -341,13 +353,15 @@ class Database:
                     AVG(max_drawdown) as avg_max_drawdown,
                     AVG(max_profit) as avg_max_profit
                 FROM trades
-            """).fetchone()
+            """
+            ).fetchone()
 
     def get_exit_reason_distribution(self):
         """Get distribution of trade exit reasons"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            return cursor.execute("""
+            return cursor.execute(
+                """
                 SELECT
                     exit_reason,
                     COUNT(*) as count,
@@ -356,7 +370,8 @@ class Database:
                 FROM trades
                 WHERE status = 'Closed'
                 GROUP BY exit_reason
-            """).fetchall()
+            """
+            ).fetchall()
 
     def load_closed_trades(self):
         """Load closed trades from database"""
@@ -364,7 +379,8 @@ class Database:
             with self.get_connection() as conn:
                 # Use DictCursor to get results as dictionaries
                 cursor = conn.cursor(cursor_factory=DictCursor)
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT ticker, entry_price, timestamp as entry_timestamp,
                            ai_agent, contract_address, network,
                            exit_price, exit_timestamp, exit_reason,
@@ -373,7 +389,8 @@ class Database:
                     FROM trades
                     WHERE status = 'Closed'
                     ORDER BY exit_timestamp DESC
-                """)
+                """
+                )
                 trades = cursor.fetchall()
 
                 closed_trades = []
@@ -381,7 +398,7 @@ class Database:
                     try:
                         entry_timestamp = datetime.strptime(
                             trade["entry_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                            "%Y-%m-%d %H:%M:%S"
+                            "%Y-%m-%d %H:%M:%S",
                         )
                     except ValueError:
                         entry_timestamp = trade["entry_timestamp"]
@@ -389,32 +406,39 @@ class Database:
                     try:
                         exit_timestamp = datetime.strptime(
                             trade["exit_timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                            "%Y-%m-%d %H:%M:%S"
+                            "%Y-%m-%d %H:%M:%S",
                         )
                     except ValueError:
                         exit_timestamp = trade["exit_timestamp"]
 
-                    closed_trades.append({
-                        "type": "trade",
-                        "ai_agent": trade["ai_agent"],
-                        "ticker": trade["ticker"],
-                        "contract_address": trade["contract_address"],
-                        "network": trade["network"],
-                        "market_cap": trade["market_cap"],
-                        "entry_time": entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                        "entry_price": float(trade["entry_price"]),
-                        "current_price": float(trade["exit_price"]),
-                        "ath_price": float(trade["ath_price"]) if trade["ath_price"] else float(trade["exit_price"]),
-                        "ath_timestamp": trade["ath_timestamp"],
-                        "price_change": f"{float(trade['pnl_percentage']):.2f}%",
-                        "invested_amount": 100.0,
-                        "current_value": 100.0 * (1 + float(trade["pnl_percentage"]) / 100),
-                        "pnl_dollars": float(trade["pnl_amount"]),
-                        "status": "Closed",
-                        "exit_price": float(trade["exit_price"]),
-                        "exit_timestamp": exit_timestamp,
-                        "exit_reason": trade["exit_reason"],
-                    })
+                    closed_trades.append(
+                        {
+                            "type": "trade",
+                            "ai_agent": trade["ai_agent"],
+                            "ticker": trade["ticker"],
+                            "contract_address": trade["contract_address"],
+                            "network": trade["network"],
+                            "market_cap": trade["market_cap"],
+                            "entry_time": entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                            "entry_price": float(trade["entry_price"]),
+                            "current_price": float(trade["exit_price"]),
+                            "ath_price": (
+                                float(trade["ath_price"])
+                                if trade["ath_price"]
+                                else float(trade["exit_price"])
+                            ),
+                            "ath_timestamp": trade["ath_timestamp"],
+                            "price_change": f"{float(trade['pnl_percentage']):.2f}%",
+                            "invested_amount": 100.0,
+                            "current_value": 100.0
+                            * (1 + float(trade["pnl_percentage"]) / 100),
+                            "pnl_dollars": float(trade["pnl_amount"]),
+                            "status": "Closed",
+                            "exit_price": float(trade["exit_price"]),
+                            "exit_timestamp": exit_timestamp,
+                            "exit_reason": trade["exit_reason"],
+                        }
+                    )
 
                 return closed_trades
 
@@ -427,7 +451,8 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(cursor_factory=DictCursor)
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT
                         ut.id,
                         ut.user_id,
@@ -440,7 +465,8 @@ class Database:
                     FROM user_trades ut
                     WHERE ut.status = 'open'
                     AND ut.stop_loss_price IS NOT NULL
-                """)
+                """
+                )
                 return cursor.fetchall()
         except Exception as e:
             logger.error(f"Error fetching user trades with stop loss: {str(e)}")
@@ -451,7 +477,8 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(cursor_factory=DictCursor)
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT
                         ut.id,
                         ut.user_id,
@@ -465,7 +492,8 @@ class Database:
                     FROM user_trades ut
                     WHERE ut.status = 'open'
                     AND ut.take_profit_price IS NOT NULL
-                """)
+                """
+                )
                 return cursor.fetchall()
         except Exception as e:
             logger.error(f"Error fetching user trades with take profit: {str(e)}")

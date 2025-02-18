@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class PumpFunManager:
     def __init__(self, callback: Callable):
         self.uri = "wss://pumpportal.fun/api/data"
@@ -42,7 +43,7 @@ class PumpFunManager:
                 "token_address": data.get("mint"),  # Use mint address as token address
                 "network": "solana",  # PumpFun is Solana-specific
                 "market_cap_sol": data.get("marketCapSol"),
-                "pool": data.get("pool")
+                "pool": data.get("pool"),
             }
 
             await asyncio.sleep(5)

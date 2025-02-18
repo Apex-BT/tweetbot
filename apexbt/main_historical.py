@@ -7,7 +7,7 @@ from apexbt.tweet.tweet import TwitterManager
 from apexbt.sheets.sheets import (
     setup_google_sheets,
     save_tweet as save_tweet_to_sheets,
-    get_twitter_accounts
+    get_twitter_accounts,
 )
 import time
 import logging
@@ -16,6 +16,7 @@ from apexbt.config.config import config
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class ApexbtHistorical:
     def __init__(self):
@@ -33,7 +34,9 @@ class ApexbtHistorical:
         if self.sheets and "accounts" in self.sheets:
             self.twitter_users = get_twitter_accounts(self.sheets["accounts"])
             if not self.twitter_users:
-                logger.warning("No Twitter accounts found in Accounts sheet. Using config defaults.")
+                logger.warning(
+                    "No Twitter accounts found in Accounts sheet. Using config defaults."
+                )
                 self.twitter_users = config.TWITTER_USERS
         else:
             logger.warning("Accounts sheet not available. Using config defaults.")
@@ -42,7 +45,7 @@ class ApexbtHistorical:
         self.trade_manager = TradeManager(
             db=self.db,
             update_interval=config.TRADE_UPDATE_INTERVAL_SECONDS,
-            historical=True
+            historical=True,
         )
 
     def save_to_both(self, tweet, ticker, ticker_status, price_data, ai_agent):
@@ -53,7 +56,12 @@ class ApexbtHistorical:
         # Save to historical Google Sheets if available
         if self.sheets and "tweets" in self.sheets:
             save_tweet_to_sheets(
-                self.sheets["tweets"], tweet, ticker, ticker_status, price_data, ai_agent
+                self.sheets["tweets"],
+                tweet,
+                ticker,
+                ticker_status,
+                price_data,
+                ai_agent,
             )
 
     def process_tweets(self, tweets):
@@ -123,7 +131,9 @@ class ApexbtHistorical:
                         )
 
                 # Save to both historical database and sheets
-                self.save_to_both(tweet, ticker, ticker_status, price_data, tweet.author)
+                self.save_to_both(
+                    tweet, ticker, ticker_status, price_data, tweet.author
+                )
                 time.sleep(1)
 
             except Exception as e:
@@ -131,7 +141,9 @@ class ApexbtHistorical:
                 time.sleep(2)
                 continue
 
-    def process_user_historical_tweets(self, username, start_date, current_user_num, total_users):
+    def process_user_historical_tweets(
+        self, username, start_date, current_user_num, total_users
+    ):
         """Process historical tweets for a single user"""
         logger.info(
             f"\nProcessing historical data for user {current_user_num}/{total_users}: @{username}"
@@ -168,10 +180,7 @@ class ApexbtHistorical:
             for i, username in enumerate(self.twitter_users, 1):
                 try:
                     self.process_user_historical_tweets(
-                        username,
-                        start_date,
-                        i,
-                        len(self.twitter_users)
+                        username, start_date, i, len(self.twitter_users)
                     )
                 except Exception as e:
                     logger.error(
@@ -188,11 +197,13 @@ class ApexbtHistorical:
         else:
             logger.error("Failed to authenticate with Twitter API")
 
+
 def main():
     apexbt = ApexbtHistorical()
     apexbt.initialize()
     start_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
     apexbt.run_historical_analysis(start_date)
+
 
 if __name__ == "__main__":
     main()

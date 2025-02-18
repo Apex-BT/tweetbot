@@ -259,10 +259,9 @@ class Codex:
             for token in token_inputs:
                 network_id = Codex.SUPPORTED_NETWORKS.get(token["network"].lower())
                 if network_id:
-                    query_inputs.append({
-                        "address": token["contract_address"],
-                        "networkId": network_id
-                    })
+                    query_inputs.append(
+                        {"address": token["contract_address"], "networkId": network_id}
+                    )
 
             if not query_inputs:
                 logger.error("No valid token inputs after network validation")
@@ -273,7 +272,7 @@ class Codex:
             all_results = []
 
             for i in range(0, len(query_inputs), BATCH_SIZE):
-                batch = query_inputs[i:i + BATCH_SIZE]
+                batch = query_inputs[i : i + BATCH_SIZE]
 
                 query = """
                 query GetTokenPrices($inputs: [GetPriceInput!]!) {
@@ -302,18 +301,27 @@ class Codex:
 
                     prices = data.get("data", {}).get("getTokenPrices", [])
 
-                    batch_results = [{
-                        "price": float(price.get("priceUsd", 0) or 0),
-                        "confidence": price.get("confidence"),
-                        "pool_address": price.get("poolAddress"),
-                        "network": next(t["network"] for t in token_inputs
-                                     if t["contract_address"].lower() == price["address"].lower()),
-                        "contract_address": price["address"]
-                    } for price in prices]
+                    batch_results = [
+                        {
+                            "price": float(price.get("priceUsd", 0) or 0),
+                            "confidence": price.get("confidence"),
+                            "pool_address": price.get("poolAddress"),
+                            "network": next(
+                                t["network"]
+                                for t in token_inputs
+                                if t["contract_address"].lower()
+                                == price["address"].lower()
+                            ),
+                            "contract_address": price["address"],
+                        }
+                        for price in prices
+                    ]
 
                     all_results.extend(batch_results)
                 else:
-                    logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                    logger.error(
+                        f"Codex API error ({response.status_code}): {response.text}"
+                    )
                     continue
 
             return all_results if all_results else None
@@ -398,7 +406,7 @@ class Codex:
         contract_address: str,
         network: str = "ethereum",
         cursor: str = None,
-        sort: str = None
+        sort: str = None,
     ) -> Optional[Dict]:
         """
         Get token holders using GraphQL
@@ -444,22 +452,17 @@ class Codex:
             """
 
             # Construct input object according to API spec
-            input_vars = {
-                "tokenId": token_id
-            }
+            input_vars = {"tokenId": token_id}
             if cursor:
                 input_vars["cursor"] = cursor
             if sort:
                 input_vars["sort"] = sort
 
-            variables = {
-                "input": input_vars
-            }
+            variables = {"input": input_vars}
 
             Codex.rate_limiter.wait_if_needed()
             response = Codex.session.post(
-                Codex.base_url,
-                json={"query": query, "variables": variables}
+                Codex.base_url, json={"query": query, "variables": variables}
             )
 
             if response.status_code == 200:
@@ -479,12 +482,16 @@ class Codex:
                     "next_cursor": holders_data.get("cursor"),
                     "status": holders_data.get("status"),
                     "top10_holders_percent": holders_data.get("top10HoldersPercent"),
-                    "token_id": token_id
+                    "token_id": token_id,
                 }
             else:
-                logger.error(f"Codex API error ({response.status_code}): {response.text}")
+                logger.error(
+                    f"Codex API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
-            logger.error(f"Error getting token holders for {contract_address}: {str(e)}")
+            logger.error(
+                f"Error getting token holders for {contract_address}: {str(e)}"
+            )
             return None

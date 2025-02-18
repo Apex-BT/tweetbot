@@ -2,6 +2,7 @@ import logging
 import requests
 import traceback
 
+
 class DexScreener:
     """Client for interacting with DexScreener API"""
 
@@ -38,13 +39,16 @@ class DexScreener:
                 matching_pairs = [
                     pair
                     for pair in pairs
-                    if pair.get("baseToken", {}).get("symbol", "").upper() == ticker.upper()
+                    if pair.get("baseToken", {}).get("symbol", "").upper()
+                    == ticker.upper()
                 ]
 
                 self.logger.info(f"Number of matching pairs: {len(matching_pairs)}")
 
                 if not matching_pairs:
-                    self.logger.warning(f"No pairs found with matching ticker {ticker} on DexScreener")
+                    self.logger.warning(
+                        f"No pairs found with matching ticker {ticker} on DexScreener"
+                    )
                     return None
 
                 # Sort pairs by liquidity and volume first
@@ -67,8 +71,12 @@ class DexScreener:
                 return {
                     "current_price": price_usd,
                     "volume_24h": float(best_pair.get("volume", {}).get("h24", 0) or 0),
-                    "liquidity": float(best_pair.get("liquidity", {}).get("usd", 0) or 0),
-                    "percent_change_24h": float(best_pair.get("priceChange", {}).get("h24", 0) or 0),
+                    "liquidity": float(
+                        best_pair.get("liquidity", {}).get("usd", 0) or 0
+                    ),
+                    "percent_change_24h": float(
+                        best_pair.get("priceChange", {}).get("h24", 0) or 0
+                    ),
                     "dex": best_pair.get("dexId"),
                     "network": best_pair.get("chainId"),
                     "pair_name": f"{best_pair.get('baseToken', {}).get('symbol')}/{best_pair.get('quoteToken', {}).get('symbol')}",
@@ -79,11 +87,15 @@ class DexScreener:
                 }
 
             else:
-                self.logger.error(f"DexScreener API error ({response.status_code}): {response.text}")
+                self.logger.error(
+                    f"DexScreener API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
-            self.logger.error(f"Error getting DexScreener market data for {ticker}: {str(e)}")
+            self.logger.error(
+                f"Error getting DexScreener market data for {ticker}: {str(e)}"
+            )
             self.logger.error(f"Exception traceback: {traceback.format_exc()}")
             return None
 
@@ -106,7 +118,9 @@ class DexScreener:
                 pairs = response.json()  # API returns array with single pair object
 
                 if not pairs or len(pairs) == 0:
-                    self.logger.warning(f"No pairs found for contract {contract_address} on chain {chain_id}")
+                    self.logger.warning(
+                        f"No pairs found for contract {contract_address} on chain {chain_id}"
+                    )
                     return None
 
                 # Get the first (and usually only) pair
@@ -119,8 +133,12 @@ class DexScreener:
                 return {
                     "current_price": price_usd,
                     "volume_24h": float(best_pair.get("volume", {}).get("h24", 0) or 0),
-                    "liquidity": float(best_pair.get("liquidity", {}).get("usd", 0) or 0),
-                    "percent_change_24h": float(best_pair.get("priceChange", {}).get("h24", 0) or 0),
+                    "liquidity": float(
+                        best_pair.get("liquidity", {}).get("usd", 0) or 0
+                    ),
+                    "percent_change_24h": float(
+                        best_pair.get("priceChange", {}).get("h24", 0) or 0
+                    ),
                     "dex": best_pair.get("dexId"),
                     "network": best_pair.get("chainId"),
                     "pair_name": f"{best_pair.get('baseToken', {}).get('symbol')}/{best_pair.get('quoteToken', {}).get('symbol')}",
@@ -134,10 +152,14 @@ class DexScreener:
                 }
 
             else:
-                self.logger.error(f"DexScreener API error ({response.status_code}): {response.text}")
+                self.logger.error(
+                    f"DexScreener API error ({response.status_code}): {response.text}"
+                )
                 return None
 
         except Exception as e:
-            self.logger.error(f"Error getting DexScreener data for {contract_address} on {chain_id}: {str(e)}")
+            self.logger.error(
+                f"Error getting DexScreener data for {contract_address} on {chain_id}: {str(e)}"
+            )
             self.logger.error(f"Exception traceback: {traceback.format_exc()}")
             return None
