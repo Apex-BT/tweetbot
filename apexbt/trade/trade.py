@@ -363,16 +363,21 @@ class TradeManager:
             stop_loss_trades = self.db.get_active_user_trades_with_stop_loss()
             take_profit_trades = self.db.get_active_user_trades_with_take_profit()
 
+            if not stop_loss_trades and not take_profit_trades:
+                return  # No trades to process
+
             # Combine all unique token/network pairs from both trade types
             price_inputs = set()
 
             # Add price inputs from stop loss trades
             for trade in stop_loss_trades:
-                price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
+                if trade.get('token_address') and trade.get('chain'):
+                    price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
 
             # Add price inputs from take profit trades
             for trade in take_profit_trades:
-                price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
+                if trade.get('token_address') and trade.get('chain'):
+                    price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
 
             # Convert to list of dictionaries for Codex
             price_requests = [
@@ -384,34 +389,42 @@ class TradeManager:
             if price_requests:
                 price_results = Codex.get_crypto_prices(price_requests)
 
-                # Create price lookup dictionary
-                price_lookup = {
-                    price['contract_address'].lower(): price['price']
-                    for price in price_results
-                    if price and price.get('price')
-                }
+                # Handle case where Codex returns None
+                if price_results is None:
+                    logger.warning("Codex returned no price data")
+                    return
 
-                # Process stop losses with verified prices
-                for trade in stop_loss_trades:
-                    token_key = trade['token_address'].lower()
-                    if token_key in price_lookup:
-                        verified_price = price_lookup[token_key]
-                        self.check_user_stop_losses(
-                            token_address=trade['token_address'],
-                            current_price=verified_price,
-                            network=trade['chain']
-                        )
+                # Create price lookup dictionary with additional validation
+                price_lookup = {}
+                for price_data in price_results:
+                    if isinstance(price_data, dict) and price_data.get('contract_address') and price_data.get('price'):
+                        price_lookup[price_data['contract_address'].lower()] = price_data['price']
 
-                # Process take profits with verified prices
-                for trade in take_profit_trades:
-                    token_key = trade['token_address'].lower()
-                    if token_key in price_lookup:
-                        verified_price = price_lookup[token_key]
-                        self.check_user_take_profits(
-                            token_address=trade['token_address'],
-                            current_price=verified_price,
-                            network=trade['chain']
-                        )
+                # Only proceed if we have valid price data
+                if price_lookup:
+                    # Process stop losses with verified prices
+                    for trade in stop_loss_trades:
+                        token_key = trade['token_address'].lower()
+                        if token_key in price_lookup:
+                            verified_price = price_lookup[token_key]
+                            self.check_user_stop_losses(
+                                token_address=trade['token_address'],
+                                current_price=verified_price,
+                                network=trade['chain']
+                            )
+
+                    # Process take profits with verified prices
+                    for trade in take_profit_trades:
+                        token_key = trade['token_address'].lower()
+                        if token_key in price_lookup:
+                            verified_price = price_lookup[token_key]
+                            self.check_user_take_profits(
+                                token_address=trade['token_address'],
+                                current_price=verified_price,
+                                network=trade['chain']
+                            )
+                else:
+                    logger.warning("No valid price data found in Codex response")
 
         except Exception as e:
             logger.error(f"Error processing user trades: {str(e)}")
