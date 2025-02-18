@@ -254,6 +254,9 @@ class Codex:
                 logger.error("No token inputs provided")
                 return None
 
+            logger.info(f"Getting prices for {len(token_inputs)} tokens")
+            logger.info(f"Token inputs: {token_inputs}")
+
             # Convert inputs to proper format
             query_inputs = []
             for token in token_inputs:
