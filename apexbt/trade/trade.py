@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import List
 from datetime import datetime
 from apexbt.crypto.codex import Codex
+from apexbt.crypto.dexscreener import DexScreener
 from apexbt.config.config import config
 from apexbt.database.database import Database
 from apexbt.crypto.sniffer import SolSnifferAPI
@@ -257,171 +258,127 @@ class TradeManager:
             # Get closed trades first
             closed_trades = self.db.load_closed_trades()
 
-            # Prepare batch price request
-            token_inputs = [
-                {"contract_address": trade.contract_address, "network": trade.network}
-                for trade in self.active_trades
-            ]
+            # Process active trades using DexScreener
+            for trade in self.active_trades:
+                try:
+                    # Get price data from DexScreener
+                    price_data = DexScreener.get_token_by_address(
+                        contract_address=trade.contract_address,
+                        chain_id=trade.network
+                    )
 
-            # Get all prices in one batch request
-            price_results = Codex.get_crypto_prices(token_inputs)
+                    if price_data and price_data.get("current_price"):
+                        current_price = price_data["current_price"]
 
-            if price_results:
-                price_lookup = {
-                    price["contract_address"].lower(): price for price in price_results
-                }
-
-                for trade in self.active_trades:
-                    price_data = price_lookup.get(trade.contract_address.lower())
-
-                    if price_data and price_data.get("price"):
-                        current_price = price_data["price"]
-
-                        # Check both stop losses and take profits for this token
-                        self.check_user_stop_losses(
+                        # Process user trades with Codex for this token
+                        self._process_user_trades(
                             token_address=trade.contract_address,
-                            current_price=current_price,
                             network=trade.network,
-                        )
-
-                        self.check_user_take_profits(
-                            token_address=trade.contract_address,
-                            current_price=current_price,
-                            network=trade.network,
+                            current_price=current_price
                         )
 
                         # Check stop loss
                         if trade.check_stop_loss(current_price):
-                            trades_to_exit.append(
-                                {
-                                    "ticker": trade.ticker,
-                                    "contract_address": trade.contract_address,
-                                    "entry_price": trade.entry_price,
-                                    "exit_price": current_price,
-                                    "stop_loss": trade.stop_loss,
-                                    "ath_price": trade.ath_price,
-                                    "pnl_amount": 100
-                                    * ((current_price / trade.entry_price) - 1),
-                                    "pnl_percentage": (
-                                        (current_price / trade.entry_price) - 1
-                                    )
-                                    * 100,
-                                    "ai_agent": trade.ai_agent,
-                                    "network": trade.network,
-                                    "duration": current_time - trade.entry_timestamp,
-                                }
-                            )
+                            trades_to_exit.append({
+                                "ticker": trade.ticker,
+                                "contract_address": trade.contract_address,
+                                "entry_price": trade.entry_price,
+                                "exit_price": current_price,
+                                "stop_loss": trade.stop_loss,
+                                "ath_price": trade.ath_price,
+                                "pnl_amount": 100 * ((current_price / trade.entry_price) - 1),
+                                "pnl_percentage": ((current_price / trade.entry_price) - 1) * 100,
+                                "ai_agent": trade.ai_agent,
+                                "network": trade.network,
+                                "duration": current_time - trade.entry_timestamp
+                            })
                             continue
 
                         # Check and update ATH if necessary
                         ath_updated = trade.update_ath(current_price, current_time)
                         if ath_updated:
-                            trades_to_update.append(
-                                {
-                                    "ticker": trade.ticker,
-                                    "contract_address": trade.contract_address,
-                                    "ath_price": trade.ath_price,
-                                    "ath_timestamp": trade.ath_timestamp,
-                                    "stop_loss": trade.stop_loss,
-                                }
-                            )
+                            trades_to_update.append({
+                                "ticker": trade.ticker,
+                                "contract_address": trade.contract_address,
+                                "ath_price": trade.ath_price,
+                                "ath_timestamp": trade.ath_timestamp,
+                                "stop_loss": trade.stop_loss
+                            })
 
                         # Calculate statistics
-                        price_change = (
-                            (current_price - trade.entry_price) / trade.entry_price
-                        ) * 100
-                        invested_amount = 100.0
-                        current_value = invested_amount * (1 + price_change / 100)
-                        pnl = current_value - invested_amount
-
-                        # Add trade stats
-                        stats.append(
-                            {
-                                "type": "trade",
-                                "ai_agent": trade.ai_agent,
-                                "ticker": trade.ticker,
-                                "entry_time": trade.entry_timestamp.strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                ),
-                                "entry_price": trade.entry_price,
-                                "current_price": current_price,
-                                "ath_price": trade.ath_price,
-                                "ath_timestamp": trade.ath_timestamp.strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                ),
-                                "price_change": f"{price_change:.2f}%",
-                                "invested_amount": invested_amount,
-                                "current_value": current_value,
-                                "pnl_dollars": pnl,
-                                "contract_address": trade.contract_address,
-                                "status": "Open",
-                            }
+                        self._calculate_trade_stats(
+                            trade, current_price, stats, agent_totals, grand_total, price_data
                         )
 
-                        # Update agent totals
-                        if trade.ai_agent not in agent_totals:
-                            agent_totals[trade.ai_agent] = {
-                                "invested_amount": 0,
-                                "current_value": 0,
-                                "pnl_dollars": 0,
-                            }
-                        agent_totals[trade.ai_agent][
-                            "invested_amount"
-                        ] += invested_amount
-                        agent_totals[trade.ai_agent]["current_value"] += current_value
-                        agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
+                except Exception as e:
+                    logger.error(f"Error processing trade {trade.ticker}: {str(e)}")
 
-            # Add closed trades to stats
-            stats.extend(closed_trades)
-
-            # Update agent totals with closed trades
-            for trade in closed_trades:
-                agent = trade["ai_agent"]
-                if agent not in agent_totals:
-                    agent_totals[agent] = {
-                        "invested_amount": 0,
-                        "current_value": 0,
-                        "pnl_dollars": 0,
-                    }
-                agent_totals[agent]["invested_amount"] += trade["invested_amount"]
-                agent_totals[agent]["current_value"] += trade["current_value"]
-                agent_totals[agent]["pnl_dollars"] += trade["pnl_dollars"]
-
-            # Process any trades that need to be exited
-            for trade in trades_to_exit:
-                self.exit_trade(
-                    next(t for t in self.active_trades if t.ticker == trade["ticker"]),
-                    trade["exit_price"],
-                    "Stop Loss",
-                )
-
-            # Add agent totals to stats
-            for agent, totals in agent_totals.items():
-                stats.append({"type": "agent_total", "agent": agent, **totals})
-                grand_total["invested_amount"] += totals["invested_amount"]
-                grand_total["current_value"] += totals["current_value"]
-                grand_total["pnl_dollars"] += totals["pnl_dollars"]
-
-            # Add grand total
-            stats.append({"type": "grand_total", **grand_total})
-
-            # Single update to PNL
-            self.sync_pnl_updates(stats, sheets)
-
-            # Update trades worksheet if needed
-            if trades_to_update and self.sheets and "trades" in self.sheets:
-                from apexbt.sheets.sheets import update_trades_worksheet
-
-                update_trades_worksheet(self.sheets["trades"], trades_to_update)
-
-            # Update agent summary if sheets available
-            if sheets and "agent_summary" in sheets:
-                from apexbt.sheets.sheets import update_agent_summary
-
-                update_agent_summary(sheets["agent_summary"], stats)
+            # Process remaining updates and display stats
+            self._process_updates(stats, trades_to_exit, trades_to_update, closed_trades, agent_totals, grand_total, sheets)
 
         except Exception as e:
             logger.error(f"Error updating trade prices: {str(e)}")
+            logger.exception("Full traceback:")
+
+    def _process_user_trades(self, token_address: str, network: str, current_price: float):
+        """Process user trades using Codex for price verification"""
+        try:
+            # Get all user trades for this token
+            stop_loss_trades = self.db.get_active_user_trades_with_stop_loss()
+            take_profit_trades = self.db.get_active_user_trades_with_take_profit()
+
+            # Combine all unique token/network pairs from both trade types
+            price_inputs = set()
+
+            # Add price inputs from stop loss trades
+            for trade in stop_loss_trades:
+                price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
+
+            # Add price inputs from take profit trades
+            for trade in take_profit_trades:
+                price_inputs.add((trade['token_address'].lower(), trade['chain'].lower()))
+
+            # Convert to list of dictionaries for Codex
+            price_requests = [
+                {"contract_address": addr, "network": chain}
+                for addr, chain in price_inputs
+            ]
+
+            # Make single batch call to Codex
+            if price_requests:
+                price_results = Codex.get_crypto_prices(price_requests)
+
+                # Create price lookup dictionary
+                price_lookup = {
+                    price['contract_address'].lower(): price['price']
+                    for price in price_results
+                    if price and price.get('price')
+                }
+
+                # Process stop losses with verified prices
+                for trade in stop_loss_trades:
+                    token_key = trade['token_address'].lower()
+                    if token_key in price_lookup:
+                        verified_price = price_lookup[token_key]
+                        self.check_user_stop_losses(
+                            token_address=trade['token_address'],
+                            current_price=verified_price,
+                            network=trade['chain']
+                        )
+
+                # Process take profits with verified prices
+                for trade in take_profit_trades:
+                    token_key = trade['token_address'].lower()
+                    if token_key in price_lookup:
+                        verified_price = price_lookup[token_key]
+                        self.check_user_take_profits(
+                            token_address=trade['token_address'],
+                            current_price=verified_price,
+                            network=trade['chain']
+                        )
+
+        except Exception as e:
+            logger.error(f"Error processing user trades: {str(e)}")
             logger.exception("Full traceback:")
 
     def update_trade_ath_and_stop_loss(

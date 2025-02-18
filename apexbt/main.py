@@ -29,7 +29,6 @@ class Apexbt:
         self.twitter_manager = None
         self.pumpfun_manager = None
         self.virtuals_manager = None
-        self.dex_screener = DexScreener()
         self.twitter_users = []
         self.twitter_validator = None
         self.pumpfun_validator = None
@@ -114,7 +113,7 @@ class Apexbt:
                 return
 
             # Get token data from DexScreener
-            dex_data = self.dex_screener.get_token_by_address(contract_address, network)
+            dex_data = DexScreener.get_token_by_address(contract_address, network)
 
             if dex_data:
                 dex_data["address"] = contract_address
@@ -212,7 +211,7 @@ class Apexbt:
             price_data = None
             if ticker_status == "Single ticker":
                 # First get contract/network from DexScreener
-                dex_data = self.dex_screener.get_token_by_ticker(ticker)
+                dex_data = DexScreener.get_token_by_ticker(ticker)
 
                 if dex_data:
                     is_valid, reason = self.twitter_validator.validate_token(dex_data)

@@ -18,7 +18,7 @@ class BaseConfig:
         default_factory=lambda: ["aixbt_agent", "Vader_AI_"]
     )
     STOP_LOSS_PERCENTAGE: float = 0.001
-    TRADE_UPDATE_INTERVAL_SECONDS: int = 3600
+    TRADE_UPDATE_INTERVAL_SECONDS: int = 15
     MARKET_CAP_FILTER: int = 250000000
 
 
