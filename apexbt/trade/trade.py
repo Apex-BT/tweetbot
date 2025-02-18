@@ -320,6 +320,42 @@ class TradeManager:
             logger.error(f"Error updating trade prices: {str(e)}")
             logger.exception("Full traceback:")
 
+    def _calculate_trade_stats(self, trade, current_price, stats, agent_totals, grand_total, price_data):
+        """Calculate and update trade statistics"""
+        price_change = ((current_price - trade.entry_price) / trade.entry_price) * 100
+        invested_amount = 100.0
+        current_value = invested_amount * (1 + price_change / 100)
+        pnl = current_value - invested_amount
+
+        stats.append({
+            "type": "trade",
+            "ai_agent": trade.ai_agent,
+            "ticker": trade.ticker,
+            "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "entry_price": trade.entry_price,
+            "current_price": current_price,
+            "ath_price": trade.ath_price,
+            "ath_timestamp": trade.ath_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "price_change": f"{price_change:.2f}%",
+            "invested_amount": invested_amount,
+            "current_value": current_value,
+            "pnl_dollars": pnl,
+            "contract_address": trade.contract_address,
+            "status": "Open",
+            "market_cap": price_data.get("market_cap")
+        })
+
+        # Update agent totals
+        if trade.ai_agent not in agent_totals:
+            agent_totals[trade.ai_agent] = {
+                "invested_amount": 0,
+                "current_value": 0,
+                "pnl_dollars": 0
+            }
+        agent_totals[trade.ai_agent]["invested_amount"] += invested_amount
+        agent_totals[trade.ai_agent]["current_value"] += current_value
+        agent_totals[trade.ai_agent]["pnl_dollars"] += pnl
+
     def _process_user_trades(self, token_address: str, network: str, current_price: float):
         """Process user trades using Codex for price verification"""
         try:
