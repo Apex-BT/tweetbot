@@ -202,10 +202,10 @@ class Apexbt:
             if not ticker:
                 return
 
-            # Only reject if we're confident about negative sentiment
-            if not self.trade_agent.should_take_trade(tweet.text, ticker):
-                logger.info("Trade rejected due to negative sentiment")
-                return
+            # # Only reject if we're confident about negative sentiment
+            # if not self.trade_agent.should_take_trade(tweet.text, ticker):
+            #     logger.info("Trade rejected due to negative sentiment")
+            #     return
 
             # Get price data for single ticker
             price_data = None

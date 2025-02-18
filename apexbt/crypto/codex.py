@@ -254,8 +254,11 @@ class Codex:
                 logger.error("No token inputs provided")
                 return None
 
-            logger.info(f"Getting prices for {len(token_inputs)} tokens")
-            logger.info(f"Token inputs: {token_inputs}")
+            # Create a lookup map for network info
+            address_to_network = {
+                token["contract_address"].lower(): token["network"]
+                for token in token_inputs
+            }
 
             # Convert inputs to proper format
             query_inputs = []
@@ -304,23 +307,22 @@ class Codex:
 
                     prices = data.get("data", {}).get("getTokenPrices", [])
 
-                    batch_results = [
-                        {
-                            "price": float(price.get("priceUsd", 0) or 0),
-                            "confidence": price.get("confidence"),
-                            "pool_address": price.get("poolAddress"),
-                            "network": next(
-                                t["network"]
-                                for t in token_inputs
-                                if t["contract_address"].lower()
-                                == price["address"].lower()
-                            ),
-                            "contract_address": price["address"],
-                        }
-                        for price in prices
-                    ]
+                    # Process results using the lookup map
+                    for price in prices:
+                        if price and isinstance(price, dict):
+                            address = price.get("address", "").lower()
+                            network = address_to_network.get(address)
 
-                    all_results.extend(batch_results)
+                            if network:
+                                result = {
+                                    "price": float(price.get("priceUsd", 0) or 0),
+                                    "confidence": price.get("confidence"),
+                                    "pool_address": price.get("poolAddress"),
+                                    "network": network,
+                                    "contract_address": price.get("address"),
+                                }
+                                all_results.append(result)
+
                 else:
                     logger.error(
                         f"Codex API error ({response.status_code}): {response.text}"
