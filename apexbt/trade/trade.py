@@ -775,8 +775,7 @@ class TradeManager:
                 # Send signal to signal bot
                 sniff_score = -1
                 if ai_agent.lower() == "pump.fun":
-                    sniff_data = self.get_sniff_data(contract_address)
-                    sniff_score = sniff_data["sniffscore"]
+                    sniff_score = -1
 
                 logger.info(f"Sending signal for {ticker} to signal bot...")
                 signal_response = self.signal_api.send_signal(
