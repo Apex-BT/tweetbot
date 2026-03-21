@@ -12,10 +12,28 @@ class BaseConfig:
     """Base configuration with default values"""
 
     SPREADSHEET_NAME: str = "ApeXBT"
+    SPREADSHEET_ID: str = "1OuXEbTsjasBrPym_dvAilckq1Ecd3s4iQc1dkOLmAAE"
     HISTORICAL_SPREADSHEET_NAME: str = "ApexBT Historical Data"
+    HISTORICAL_SPREADSHEET_ID: str = ""
     HISTORICAL_DATABASE_PATH: str = "apexbt_historical.db"
     TWITTER_USERS: List[str] = field(
-        default_factory=lambda: ["aixbt_agent", "Vader_AI_"]
+        default_factory=lambda: [
+            "aixbt_agent",
+            "Vader_AI_",
+            "0xzerebro",
+            "CreatorBid",
+            "MustStopMurad",
+            "CryptoGodJohn",
+            "inversebrah",
+            "blaborzcrypto",
+            "EmberTerminal",
+            "caborz",
+            "AltcoinGordon",
+            "TheCryptoLark",
+            "WatcherGuru",
+            "crypto_birb",
+            "DefiIgnas",
+        ]
     )
     STOP_LOSS_PERCENTAGE: float = 0.001
     TRADE_UPDATE_INTERVAL_SECONDS: int = 3600
@@ -55,7 +73,7 @@ class Config(BaseConfig):
         """Load all secrets from AWS Secrets Manager"""
 
         # Load Database Credentials
-        if db_secret := self._get_secret("rds!db-378e8981-5279-4232-a95f-44cff1bd1aea"):
+        if db_secret := self._get_secret("APEXBT_DB_CREDENTIALS"):
             username = db_secret.get("username")
             password = db_secret.get("password")
             host = os.getenv("DB_HOST")
@@ -118,30 +136,45 @@ class Config(BaseConfig):
     def validate_config(self) -> None:
         """Validate that all required configurations are present"""
         required_attrs = [
-            "CODEX_API_KEY",
+            "TWITTER_BEARER_TOKEN",
+            "GOOGLE_API_KEY",
+            "SHEETS_CREDENTIALS",
+            "DATABASE_URL",
+        ]
+
+        optional_attrs = [
             "TWITTER_API_KEY",
             "TWITTER_API_SECRET",
             "TWITTER_ACCESS_TOKEN",
             "TWITTER_ACCESS_TOKEN_SECRET",
-            "TWITTER_BEARER_TOKEN",
-            "GOOGLE_API_KEY",
+            "CODEX_API_KEY",
             "SIGNAL_API_BASE_URL",
             "SIGNAL_API_USERNAME",
             "SIGNAL_API_PASSWORD",
-            "SHEETS_CREDENTIALS",
-            "DATABASE_URL",
             "SOL_SNIFFER_API_KEY",
         ]
 
-        missing_attrs = [
+        missing_required = [
             attr
             for attr in required_attrs
             if not hasattr(self, attr) or getattr(self, attr) is None
         ]
 
-        if missing_attrs:
+        missing_optional = [
+            attr
+            for attr in optional_attrs
+            if not hasattr(self, attr) or getattr(self, attr) is None
+        ]
+
+        if missing_optional:
+            print(f"Warning: Optional configs not set (features will be disabled): {', '.join(missing_optional)}")
+            for attr in missing_optional:
+                if not hasattr(self, attr):
+                    setattr(self, attr, None)
+
+        if missing_required:
             raise ValueError(
-                f"Missing required configurations: {', '.join(missing_attrs)}"
+                f"Missing required configurations: {', '.join(missing_required)}"
             )
 
 

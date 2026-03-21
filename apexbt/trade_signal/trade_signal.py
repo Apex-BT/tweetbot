@@ -18,8 +18,9 @@ class SignalAPI:
 
     def __init__(self, base_url: str = config.SIGNAL_API_BASE_URL):
         if not hasattr(self, "initialized"):
-            self.base_url = base_url.rstrip("/")
+            self.base_url = base_url.rstrip("/") if base_url else None
             self.session = requests.Session()
+            self.enabled = self.base_url is not None
             self.initialized = True
 
     @classmethod
@@ -37,6 +38,11 @@ class SignalAPI:
         Returns:
             bool: True if initialization successful, False otherwise
         """
+        if not base_url or not username or not password:
+            logger.warning("Signal API not configured — signals will be disabled")
+            instance = cls(base_url)
+            return False
+
         if cls._is_authenticated:
             return True
 

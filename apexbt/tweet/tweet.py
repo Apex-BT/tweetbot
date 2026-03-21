@@ -100,11 +100,30 @@ class TwitterManager:
         )
 
     def verify_credentials(self) -> bool:
-        """Verify Twitter API credentials"""
+        """Verify Twitter API credentials.
+
+        Uses get_user (app-only/bearer token) instead of get_me
+        (which requires OAuth 1.0a user context).
+        """
         try:
-            me = self.client.get_me()
-            logger.info(f"Successfully authenticated as: {me.data.username}")
-            return True
+            # get_me requires user-context OAuth tokens.
+            # If we have them, try that first.
+            if self.api_key and self.access_token:
+                try:
+                    me = self.client.get_me()
+                    logger.info(f"Successfully authenticated as: {me.data.username}")
+                    return True
+                except Exception:
+                    pass  # Fall through to bearer-token check
+
+            # Bearer-token-only check: look up a known public user
+            test_user = self.client.get_user(username="twitter")
+            if test_user and test_user.data:
+                logger.info("Successfully authenticated with bearer token (app-only)")
+                return True
+
+            logger.error("Authentication failed: could not verify bearer token")
+            return False
         except Exception as e:
             logger.error(f"Authentication failed: {str(e)}")
             return False

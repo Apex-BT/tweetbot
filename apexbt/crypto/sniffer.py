@@ -1,7 +1,7 @@
 import logging
 import requests
 from typing import Optional
-from config.config import config
+from apexbt.config.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -10,9 +10,11 @@ class SolSnifferAPI:
     BASE_URL = "https://solsniffer.com/api/v2"
 
     def __init__(self):
+        api_key = config.SOL_SNIFFER_API_KEY
+        self.enabled = api_key is not None
         self.headers = {
             "accept": "application/json",
-            "X-API-KEY": config.SOL_SNIFFER_API_KEY,
+            "X-API-KEY": api_key or "",
             "Content-Type": "application/json",
         }
 
@@ -28,6 +30,10 @@ class SolSnifferAPI:
             Optional[dict]: Token data or None if request fails
         """
         try:
+            if not self.enabled:
+                logger.warning("SolSniffer API key not configured — skipping token check")
+                return None
+
             # Validate input
             if not isinstance(address, str):
                 logger.error(f"Invalid address type: {type(address)}")

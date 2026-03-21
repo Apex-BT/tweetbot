@@ -62,10 +62,17 @@ def setup_google_sheets(historical=False):
     )
 
     client = gspread.authorize(credentials)
+    spreadsheet_id = (
+        config.HISTORICAL_SPREADSHEET_ID if historical else config.SPREADSHEET_ID
+    )
     spreadsheet_name = (
         config.HISTORICAL_SPREADSHEET_NAME if historical else config.SPREADSHEET_NAME
     )
-    spreadsheet = client.open(spreadsheet_name)
+
+    if spreadsheet_id:
+        spreadsheet = client.open_by_key(spreadsheet_id)
+    else:
+        spreadsheet = client.open(spreadsheet_name)
 
     # Add suffix to worksheet names for historical data
     suffix = "_Historical" if historical else ""

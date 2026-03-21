@@ -26,10 +26,10 @@ class ValidationCriteria:
     def twitter_default(cls) -> "ValidationCriteria":
         """Default criteria for Twitter-sourced tokens"""
         return cls(
-            min_market_cap=1_000_000,  # $1M minimum
-            max_market_cap=250_000_000,  # $250M maximum
-            min_liquidity=100_000,  # $100K minimum liquidity
-            min_volume_24h=50_000,  # $50K minimum 24h volume
+            min_market_cap=0,  # No minimum
+            max_market_cap=10_000_000_000,  # $10B maximum
+            min_liquidity=0,  # No minimum liquidity
+            min_volume_24h=0,  # No minimum 24h volume
             source=TokenSource.TWITTER,
         )
 
@@ -38,9 +38,9 @@ class ValidationCriteria:
         """Default criteria for PumpFun tokens (new Solana launches)"""
         return cls(
             min_market_cap=0,  # No minimum since it's new
-            max_market_cap=10_000_000,  # $10M maximum to focus on new launches
-            min_liquidity=0,  # $5K minimum initial liquidity
-            min_volume_24h=1_000,  # $1K minimum initial volume
+            max_market_cap=10_000_000_000,  # $10B maximum
+            min_liquidity=0,  # No minimum
+            min_volume_24h=0,  # No minimum
             source=TokenSource.PUMPFUN,
         )
 

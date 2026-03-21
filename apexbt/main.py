@@ -2,17 +2,11 @@ import logging
 import asyncio
 from apexbt.tweet.tweet import TwitterManager, MockTweet
 from apexbt.database.database import Database
-from apexbt.trade.trade import TradeManager
-from apexbt.sheets.sheets import setup_google_sheets, get_twitter_accounts
-from apexbt.sheets.sheets import save_tweet as save_tweet_to_sheets
-from apexbt.crypto.codex import Codex
-from apexbt.trade_signal.trade_signal import SignalAPI
 from apexbt.agent.agent import TradeAgent
 from apexbt.crypto.dexscreener import DexScreener
 from apexbt.crypto.token_validator import TokenValidator, ValidationCriteria
 from apexbt.config.config import config
-from apexbt.pumpfun.pumpfun import PumpFunManager
-from apexbt.virtuals.virtuals import VirtualsManager
+from apexbt.leaderboard import SignalRecorder, PriceTracker, LeaderboardBuilder
 from datetime import datetime
 
 # Set up logging
@@ -23,179 +17,60 @@ logger = logging.getLogger(__name__)
 class Apexbt:
     def __init__(self):
         self.db = Database()
-        self.sheets = None
-        self.trade_manager = None
-        self.trade_agent = None
-        self.twitter_manager = None
-        self.pumpfun_manager = None
-        self.virtuals_manager = None
         self.dex_screener = DexScreener()
+        self.twitter_manager = None
+        self.trade_agent = None
         self.twitter_users = []
         self.twitter_validator = None
-        self.pumpfun_validator = None
-        self.virtuals_validator = None
+
+        # Leaderboard components
+        self.signal_recorder = SignalRecorder()
+        self.price_tracker = PriceTracker(
+            interval_minutes=5,       # update prices every 5 min
+            snapshot_interval_minutes=60,  # save snapshots every hour
+        )
+        self.leaderboard = LeaderboardBuilder()
 
     def initialize(self):
         """Initialize all components"""
-        # Initialize database
+        # Initialize database (legacy tables for backward compat)
         self.db.init_database()
 
-        # Initialize Google Sheets
-        self.sheets = setup_google_sheets()
-
-        if self.sheets and "accounts" in self.sheets:
-            self.twitter_users = get_twitter_accounts(self.sheets["accounts"])
-            if not self.twitter_users:
-                logger.warning(
-                    "No Twitter accounts found in Accounts sheet. Using config defaults."
-                )
-                self.twitter_users = config.TWITTER_USERS
-        else:
-            logger.warning("Accounts sheet not available. Using config defaults.")
-            self.twitter_users = config.TWITTER_USERS
+        # Use config defaults for Twitter users
+        # (leaderboard module handles its own Sheets connection)
+        self.twitter_users = config.TWITTER_USERS
+        logger.info(f"Monitoring {len(self.twitter_users)} Twitter accounts")
 
         # Initialize Twitter manager
         self.twitter_manager = TwitterManager(self.db)
 
-        # Initialize PumpFun manager
-        self.pumpfun_manager = PumpFunManager(callback=self.process_new_token)
-
-        # Initialize Virtuals manager
-        self.virtuals_manager = VirtualsManager(callback=self.process_new_token)
-
-        # Initialize Trade manager and Signal API
-        self.trade_manager = TradeManager(
-            db=self.db, update_interval=config.TRADE_UPDATE_INTERVAL_SECONDS
-        )
-        SignalAPI.initialize(config.SIGNAL_API_USERNAME, config.SIGNAL_API_PASSWORD)
-        signal_api = SignalAPI()
-        self.trade_manager.set_signal_api(signal_api)
-
-        # Initialize Trade agent
+        # Initialize Trade agent (Gemini sentiment analysis)
         self.trade_agent = TradeAgent()
 
-        # Create two validators with different criteria
+        # Token validator (relaxed for leaderboard — we want to track everything)
         self.twitter_validator = TokenValidator(
             criteria=ValidationCriteria.twitter_default()
         )
-        self.pumpfun_validator = TokenValidator(
-            criteria=ValidationCriteria.pumpfun_default()
+
+        signal_count = self.signal_recorder.get_signal_count()
+        agents = self.signal_recorder.get_all_agents()
+        logger.info(
+            f"Leaderboard initialized: {signal_count} signals from {len(agents)} agents"
         )
-        self.virtuals_validator = TokenValidator(
-            criteria=ValidationCriteria.virtuals_default()
-        )
 
-    async def process_new_token(self, token_info):
-        """Process new tokens from PumpFun"""
-        try:
-            # Get basic info from token_info
-            contract_address = token_info["token_address"]
-            network = token_info["network"]
-            symbol = token_info.get("symbol", "UNKNOWN")
-
-            # Ensure proper timestamp handling
-            created_at = token_info.get("created_at")
-            if not created_at:
-                created_at = datetime.now()
-            elif isinstance(created_at, str):
-                try:
-                    created_at = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    created_at = datetime.now()
-
-            # Update token_info with validated timestamp
-            token_info["created_at"] = created_at
-
-            # Skip if already processed
-            if self.db.is_tweet_processed(token_info["id"], token_info["author"]):
-                logger.info(
-                    f"Token {contract_address} from {token_info['author']} already processed, skipping..."
-                )
-                return
-
-            # Get token data from DexScreener
-            dex_data = self.dex_screener.get_token_by_address(contract_address, network)
-
-            if dex_data:
-                dex_data["address"] = contract_address
-                # Select appropriate validator based on author
-                if token_info["author"] == "pump.fun":
-                    validator = self.pumpfun_validator
-                elif token_info["author"] == "virtuals":
-                    validator = self.virtuals_validator
-                else:
-                    logger.warning(f"Unknown token source: {token_info['author']}")
-                    return
-
-                # Validate token
-                symbol = dex_data.get("token_symbol", "NOT FOUND")
-                is_valid, reason = validator.validate_token(dex_data)
-                if not is_valid:
-                    logger.info(f"Token {symbol} validation failed: {reason}")
-                    return
-
-                market_cap = dex_data.get("market_cap")
-
-                # Get holders data from Codex
-                holders_data = Codex.get_token_holders(
-                    contract_address=contract_address,
-                    network=network,
-                )
-
-                holder_count = holders_data.get("total_count", 0) if holders_data else 0
-
-                # Get price data from Codex
-                price_data = Codex.get_crypto_price(contract_address, network)
-
-                if price_data and price_data.get("price"):
-                    # Create mock tweet for compatibility
-                    mock_tweet = MockTweet(
-                        id=token_info["id"],
-                        text=token_info["text"],
-                        created_at=token_info["created_at"],
-                        author=token_info["author"],
-                    )
-
-                    # Save to database and sheets
-                    self.save_to_both(
-                        mock_tweet,
-                        symbol,
-                        "Single ticker",
-                        price_data,
-                        token_info["author"],
-                    )
-
-                    # Add trade
-                    if self.trade_manager.add_trade(
-                        symbol,
-                        contract_address,
-                        str(token_info["id"]),
-                        float(price_data["price"]),
-                        token_info["author"],
-                        network,
-                        entry_timestamp=token_info["created_at"],
-                        market_cap=market_cap,
-                        holder_count=holder_count,
-                    ):
-                        logger.info(
-                            f"Opened new trade for {symbol} at {price_data['price']}"
-                        )
-                else:
-                    logger.warning(f"No price data found from Codex for {symbol}")
-            else:
-                logger.warning(f"Could not find token info on DexScreener for {symbol}")
-
-        except Exception as e:
-            logger.error(f"Error processing PumpFun token: {str(e)}")
+    # ------------------------------------------------------------------
+    # Tweet processing (Twitter)
+    # ------------------------------------------------------------------
 
     async def process_new_tweet(self, tweet):
-        """Process a single new tweet in real-time"""
+        """Process a single new tweet — extract ticker, get price, record signal."""
         try:
-            # Skip if tweet has already been processed
+            # Skip if already recorded
+            if self.signal_recorder.is_duplicate(str(tweet.id)):
+                return
+
+            # Also check legacy DB
             if self.db.is_tweet_processed(tweet.id, tweet.author):
-                logger.info(
-                    f"Tweet {tweet.id} from {tweet.author} already processed, skipping..."
-                )
                 return
 
             # Extract ticker from tweet
@@ -203,127 +78,156 @@ class Apexbt:
             if not ticker:
                 return
 
-            # Only reject if we're confident about negative sentiment
-            if not self.trade_agent.should_take_trade(tweet.text, ticker):
-                logger.info("Trade rejected due to negative sentiment")
+            if ticker_status != "Single ticker":
                 return
 
-            # Get price data for single ticker
-            price_data = None
-            if ticker_status == "Single ticker":
-                # First get contract/network from DexScreener
-                dex_data = self.dex_screener.get_token_by_ticker(ticker)
-
-                if dex_data:
-                    is_valid, reason = self.twitter_validator.validate_token(dex_data)
-                    if not is_valid:
-                        logger.info(f"Token {ticker} validation failed: {reason}")
-                        return
-                    contract_address = dex_data.get("contract_address")
-                    network = dex_data.get("network")
-                    market_cap = dex_data.get("market_cap")
-
+            # Run sentiment analysis
+            sentiment = None
+            sentiment_confidence = None
+            try:
+                should_trade = self.trade_agent.should_take_trade(tweet.text, ticker)
+                if not should_trade:
                     logger.info(
-                        f"Found contract {contract_address} on network {network} for {ticker}"
+                        f"Skipping ${ticker} by @{tweet.author} — negative sentiment"
                     )
+                    return
 
-                    # Use contract info to get current price from Codex
-                    price_data = Codex.get_crypto_price(contract_address, network)
+                # Try to get sentiment details from the agent's last analysis
+                sentiment = "POSITIVE"
+                sentiment_confidence = 0.8
+            except Exception as e:
+                logger.debug(f"Sentiment analysis error for ${ticker}: {e}")
+                # Continue anyway — we still want to record the signal
 
-                    holders_data = Codex.get_token_holders(
-                        contract_address=contract_address,
-                        network=network,
-                    )
-                    holder_count = (
-                        holders_data.get("total_count", 0) if holders_data else 0
-                    )
+            # Get token data from DexScreener
+            dex_data = self.dex_screener.get_token_by_ticker(ticker)
 
-                    if price_data and price_data.get("price"):
-                        # Save tweet to both database and sheets
-                        self.save_to_both(
-                            tweet, ticker, ticker_status, price_data, tweet.author
-                        )
+            if not dex_data:
+                logger.warning(
+                    f"Could not find token info on DexScreener for {ticker}"
+                )
+                return
 
-                        # Add trade to manager
-                        if self.trade_manager.add_trade(
-                            ticker,
-                            price_data["contract_address"],
-                            str(tweet.id),
-                            float(price_data["price"]),
-                            tweet.author,
-                            network,
-                            entry_timestamp=tweet.created_at,
-                            market_cap=market_cap,
-                            holder_count=holder_count,
-                        ):
-                            logger.info(
-                                f"Opened new trade for {ticker} at {price_data['price']} by {tweet.author}"
-                            )
-                    else:
-                        logger.warning(f"No price data found from Codex for {ticker}")
-                else:
-                    logger.warning(
-                        f"Could not find token info on DexScreener for {ticker}"
-                    )
+            # Validate token
+            is_valid, reason = self.twitter_validator.validate_token(dex_data)
+            if not is_valid:
+                logger.info(f"Token {ticker} validation failed: {reason}")
+                return
+
+            contract_address = dex_data.get("contract_address")
+            network = dex_data.get("network")
+            price = dex_data.get("current_price")
+
+            if not price or float(price) <= 0:
+                logger.warning(f"No valid price for {ticker}")
+                return
+
+            logger.info(
+                f"Found ${ticker} at ${float(price):.8g} on {network} "
+                f"(contract={contract_address})"
+            )
+
+            # Record signal
+            signal = self.signal_recorder.record_signal_from_dex_data(
+                agent=tweet.author,
+                tweet_id=str(tweet.id),
+                tweet_text=tweet.text,
+                ticker=ticker,
+                dex_data=dex_data,
+                sentiment=sentiment,
+                sentiment_confidence=sentiment_confidence,
+            )
+
+            if signal:
+                pass  # Signal recorded — leaderboard handles the rest
 
         except Exception as e:
             logger.error(f"Error processing tweet: {str(e)}")
 
+    # ------------------------------------------------------------------
+    # Leaderboard update loop
+    # ------------------------------------------------------------------
+
+    async def leaderboard_update_loop(self):
+        """Periodically recalculate leaderboard and write to Google Sheets."""
+        logger.info("Leaderboard update loop started (every 5 minutes)")
+
+        while True:
+            try:
+                # Run sheets update in a thread (it's synchronous + rate limited)
+                await asyncio.to_thread(self.leaderboard.update_all)
+
+                signal_count = self.signal_recorder.get_signal_count()
+                agents = self.signal_recorder.get_all_agents()
+                logger.info(
+                    f"Leaderboard cycle complete: {signal_count} signals, "
+                    f"{len(agents)} agents tracked"
+                )
+            except Exception as e:
+                logger.error(f"Leaderboard update error: {e}")
+
+            await asyncio.sleep(300)  # every 5 minutes
+
+    # ------------------------------------------------------------------
+    # Main run loop
+    # ------------------------------------------------------------------
+
     async def run_async(self):
         """Async version of run method"""
-        # Initialize all components
         self.initialize()
 
         # Verify Twitter credentials
-        if not self.twitter_manager.verify_credentials():
-            logger.error("Failed to verify Twitter credentials. Exiting...")
-            return
+        twitter_enabled = self.twitter_manager.verify_credentials()
+        if not twitter_enabled:
+            logger.warning(
+                "Twitter credentials failed — Twitter monitoring disabled."
+            )
 
-        # Start trade manager
-        self.trade_manager.start_monitoring(sheets=self.sheets)
-        logger.info("Trade manager started successfully")
+        logger.info("Starting all monitoring tasks...")
 
         try:
-            twitter_task = asyncio.create_task(
-                self.twitter_manager.monitor(
-                    usernames=self.twitter_users,
-                    callback=self.process_new_tweet,
+            tasks = []
+
+            # 1. Twitter monitoring
+            if twitter_enabled:
+                twitter_task = asyncio.create_task(
+                    self.twitter_manager.monitor(
+                        usernames=self.twitter_users,
+                        callback=self.process_new_tweet,
+                    )
                 )
-            )
-            pumpfun_task = asyncio.create_task(self.pumpfun_manager.monitor())
-            virtuals_task = asyncio.create_task(self.virtuals_manager.monitor())
-            await asyncio.gather(twitter_task, pumpfun_task, virtuals_task)
+                tasks.append(twitter_task)
+                logger.info(
+                    f"Twitter monitoring: {len(self.twitter_users)} accounts"
+                )
+            else:
+                logger.info("Skipping Twitter monitoring")
+
+            # 2. Price tracker (updates prices for all active signals)
+            tracker_task = asyncio.create_task(self.price_tracker.start())
+            tasks.append(tracker_task)
+            logger.info("Price tracker: active")
+
+            # 3. Leaderboard updater (recalculates stats + writes to Sheets)
+            leaderboard_task = asyncio.create_task(self.leaderboard_update_loop())
+            tasks.append(leaderboard_task)
+            logger.info("Leaderboard updater: active")
+
+            logger.info(f"All {len(tasks)} tasks started. Bot is running.")
+            await asyncio.gather(*tasks)
 
         except KeyboardInterrupt:
             logger.info("Monitoring stopped by user")
-            self.trade_manager.stop_monitoring()
-            self.pumpfun_manager.stop()
-            self.virtuals_manager.stop()
+            self.price_tracker.stop()
         except Exception as e:
             logger.error(f"An error occurred: {str(e)}")
-            self.trade_manager.stop_monitoring()
-            self.pumpfun_manager.stop()
-            self.virtuals_manager.stop()
+            self.price_tracker.stop()
 
     def run(self):
         """Main execution method"""
         asyncio.run(self.run_async())
 
-    def save_to_both(self, tweet, ticker, ticker_status, price_data, ai_agent):
-        """Save data to both database and Google Sheets"""
-        # Save to database
-        self.db.save_tweet(tweet, ticker, ticker_status, price_data, ai_agent)
 
-        # Save to Google Sheets if available
-        if self.sheets and "tweets" in self.sheets:
-            save_tweet_to_sheets(
-                self.sheets["tweets"],
-                tweet,
-                ticker,
-                ticker_status,
-                price_data,
-                ai_agent,
-            )
 
 
 def main():

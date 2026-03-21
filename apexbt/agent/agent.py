@@ -51,7 +51,7 @@ class RateLimiter:
 class TradeAgent:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             google_api_key=config.GOOGLE_API_KEY,
             temperature=0,
             max_output_tokens=150,
